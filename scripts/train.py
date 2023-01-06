@@ -9,6 +9,9 @@ import utils
 from utils import device
 from model import ACModel
 
+from envs.memory_minigrid import register_envs
+register_envs()
+
 
 # Parse arguments
 
@@ -110,7 +113,6 @@ if __name__ == "__main__":
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-
     obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
     if "vocab" in status:
         preprocess_obss.vocab.load_vocab(status["vocab"])

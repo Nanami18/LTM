@@ -80,6 +80,8 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
 
     def forward(self, obs, memory):
         x = obs.image.transpose(1, 3).transpose(2, 3)
+        # print(x)
+        # breakpoint()
         x = self.image_conv(x)
         x = x.reshape(x.shape[0], -1)
 
@@ -90,7 +92,6 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
             memory = torch.cat(hidden, dim=1)
         else:
             embedding = x
-
         if self.use_text:
             embed_text = self._get_embed_text(obs.text)
             embedding = torch.cat((embedding, embed_text), dim=1)

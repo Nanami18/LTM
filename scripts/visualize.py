@@ -4,6 +4,8 @@ import numpy
 import utils
 from utils import device
 
+from envs.memory_minigrid import register_envs
+register_envs()
 
 # Parse arguments
 
