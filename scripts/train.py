@@ -7,7 +7,7 @@ import sys
 
 import utils
 from utils import device
-from model import ACModel
+from lstm_model import ACModel, ACModelWithEmbed
 
 from envs.memory_minigrid import register_envs
 register_envs()
@@ -64,6 +64,8 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model to handle text input")
+parser.add_argument("--with_embed", action="store_false")
+parser.add_argument("--image_embed_size", type=int, default=128)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -119,8 +121,10 @@ if __name__ == "__main__":
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-
-    acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
+    if args.with_embed:
+        acmodel = ACModelWithEmbed(obs_space, envs[0].action_space, args.mem, args.text, image_embed_size=args.image_embed_size)
+    else:
+        acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text, image_embed_size=args.image_embed_size)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)
