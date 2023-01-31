@@ -122,8 +122,8 @@ if __name__ == "__main__":
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-    acmodel = TransformerModel(obs_space, envs[0].action_space, args.mem, 
-        image_embed_size=args.image_embed_size, num_decoderlayer=args.num_decoder_layers)
+    acmodel = TransformerModel(obs_space, envs[0].action_space, 16, 
+        image_embed_size=args.image_embed_size, num_decoder_layers=args.num_decoder_layers)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)

@@ -22,7 +22,7 @@ def init_params(m):
             m.bias.data.fill_(0)
 
 class TransformerModel(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, embed_size=16, image_embed_size=128, num_decoderlayer=2, n_head=4):
+    def __init__(self, obs_space, action_space, embed_size=16, image_embed_size=128, num_decoder_layers=2, n_head=4):
         super().__init__()
        
         # Define image embedding
@@ -43,9 +43,9 @@ class TransformerModel(nn.Module, torch_ac.RecurrentACModel):
         self.image_embedding_size = image_embed_size
 
         # Define memory
-        self.num_decoderlayer = num_decoderlayer
+        self.num_decoder_layers = num_decoder_layers
         self.decoder = nn.ModuleList()
-        [self.decoder.append(nn.TransformerDecoderLayer(image_embed_size, n_head, batch_first=True)) for _ in range(num_decoderlayer)]
+        [self.decoder.append(nn.TransformerDecoderLayer(image_embed_size, n_head, batch_first=True)) for _ in range(num_decoder_layers)]
 
 
         # Resize image embedding
@@ -90,14 +90,13 @@ class TransformerModel(nn.Module, torch_ac.RecurrentACModel):
         x = x.reshape(x.shape[0], -1).unsqueeze(1)
         per_layer_input.append(x)
         
-        for i in range(self.num_decoderlayer):
+        for i in range(self.num_decoder_layers):
             x = self.decoder[i](x, memory[:, :, i, :])
-            if i != self.num_decoderlayer-1:
+            if i != self.num_decoder_layers-1:
                 per_layer_input.append(x)
 
         cur_memory = torch.stack(per_layer_input, dim=2)
         memory = torch.cat((memory, cur_memory), dim=1)
-        print(x.shape)
         action = self.actor(x).squeeze(1)
         dist = Categorical(logits=F.log_softmax(action, dim=1))
 
