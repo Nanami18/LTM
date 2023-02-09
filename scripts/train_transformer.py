@@ -7,7 +7,7 @@ import sys
 
 import utils
 from utils import device
-from transformer_model import TransformerModel
+from transformer_model import TransformerModel, TransformerModel_UsePastKV
 
 from envs.memory_minigrid import register_envs
 register_envs()
@@ -67,6 +67,7 @@ parser.add_argument("--text", action="store_true", default=False,
 parser.add_argument("--with_embed", action="store_false")
 parser.add_argument("--image_embed_size", type=int, default=128)
 parser.add_argument("--num_decoder_layers", type=int, default=1)
+parser.add_argument("--use_pastkv", action="store_true")
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -116,14 +117,21 @@ if __name__ == "__main__":
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-    obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+    if args.use_pastkv:
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+    else:
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
     if "vocab" in status:
         preprocess_obss.vocab.load_vocab(status["vocab"])
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-    acmodel = TransformerModel(obs_space, envs[0].action_space, 16, 
-        image_embed_size=args.image_embed_size, num_decoder_layers=args.num_decoder_layers)
+    if args.use_pastkv:
+        acmodel = TransformerModel_UsePastKV(obs_space, envs[0].action_space, 16, 
+            image_embed_size=args.image_embed_size, num_decoder_layers=args.num_decoder_layers, recurrence=args.recurrence)
+    else:
+        acmodel = TransformerModel(obs_space, envs[0].action_space, 16, 
+            image_embed_size=args.image_embed_size, num_decoder_layers=args.num_decoder_layers, recurrence=args.recurrence)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)
@@ -139,7 +147,8 @@ if __name__ == "__main__":
     elif args.algo == "ppo":
         algo = PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                                 args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss, None, args.num_decoder_layers)
+                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss, None, 
+                                args.num_decoder_layers, use_pastkv = args.use_pastkv)
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -156,8 +165,8 @@ if __name__ == "__main__":
     while num_frames < args.frames:
         # Update model parameters
         update_start_time = time.time()
-        exps, logs1 = algo.collect_experiences()
-        logs2 = algo.update_parameters(exps)
+        exps, logs1 = algo.collect_experiences(args.use_pastkv)
+        logs2 = algo.update_parameters(exps, args.use_pastkv)
         logs = {**logs1, **logs2}
         update_end_time = time.time()
 
