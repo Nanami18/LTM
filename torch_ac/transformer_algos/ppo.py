@@ -11,7 +11,7 @@ class PPOAlgo(BaseAlgo):
     def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.001, gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
                  adam_eps=1e-8, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
-                 reshape_reward=None, num_decoder_layers=1):
+                 reshape_reward=None, num_decoder_layers=1, use_pastkv=False):
         num_frames_per_proc = num_frames_per_proc or 128
 
         super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
@@ -26,7 +26,7 @@ class PPOAlgo(BaseAlgo):
         self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
         self.batch_num = 0
 
-    def update_parameters(self, exps):
+    def update_parameters(self, exps, use_pastkv):
         # Collect experiences
 
         for _ in range(self.epochs):
@@ -49,8 +49,7 @@ class PPOAlgo(BaseAlgo):
 
                 # Initialize memory
 
-                if self.acmodel.recurrent:
-                    memory = exps.memory[inds]
+                memory = exps.memory[inds]
 
                 for i in range(self.recurrence):
                     # Create a sub-batch of experience
@@ -59,10 +58,17 @@ class PPOAlgo(BaseAlgo):
 
                     # Compute loss
 
-                    if self.acmodel.recurrent:
+                    if use_pastkv:
+                        # print("memory shape when training: ", memory.shape)
                         dist, value, memory = self.acmodel(sb.obs, memory * sb.mask.unsqueeze(1).unsqueeze(1))
+                        if memory.shape[1] < self.recurrence:
+                            memory = torch.cat((memory, torch.zeros(memory.shape[0], 
+                                self.recurrence - memory.shape[1], memory.shape[2], memory.shape[3], device=self.device)), dim=1)
+                        else:
+                            memory = memory[:, 1:, ...]
                     else:
-                        dist, value = self.acmodel(sb.obs)
+                        dist, value, cur_memory = self.acmodel(sb.obs, memory, sb.act_indices)
+                        memory = torch.cat((memory[:, 1:], cur_memory), dim=1)
 
                     entropy = dist.entropy().mean()
 
@@ -88,11 +94,10 @@ class PPOAlgo(BaseAlgo):
 
                     # Update memories for next epoch
 
-                    if self.acmodel.recurrent and i < self.recurrence - 1:
+                    if i < self.recurrence - 1:
                         exps.memory[inds + i + 1] = memory.detach()
 
                 # Update batch values
-
                 batch_entropy /= self.recurrence
                 batch_value /= self.recurrence
                 batch_policy_loss /= self.recurrence

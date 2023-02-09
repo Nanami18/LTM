@@ -9,7 +9,7 @@ class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, num_decoder_layers):
+                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, num_decoder_layers, use_pastkv=False):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -82,9 +82,15 @@ class BaseAlgo(ABC):
 
         self.obs = self.env.reset()
         self.obss = [None] * (shape[0])
-        if self.acmodel.recurrent:
+        self.use_pastkv = use_pastkv
+        if self.use_pastkv:
             self.memory = torch.zeros(shape[1], self.recurrence, self.num_decoder_layers, self.acmodel.memory_size, device=self.device)
             self.memories = torch.zeros(*shape, self.recurrence, self.num_decoder_layers, self.acmodel.memory_size, device=self.device)
+        else:
+            self.memory = torch.zeros(shape[1], self.recurrence, self.acmodel.memory_size, device=self.device)
+            self.memories = torch.zeros(*shape, self.recurrence, self.acmodel.memory_size, device=self.device)
+            self.act_indices = torch.zeros(*shape, dtype=torch.long, device=self.device)
+            self.act_ind = torch.zeros(self.num_procs, dtype=torch.long, device=self.device)
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
@@ -104,7 +110,7 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = [0] * self.num_procs
         self.log_num_frames = [0] * self.num_procs
 
-    def collect_experiences(self):
+    def collect_experiences(self, use_pastkv):
         """Collects rollouts and computes advantages.
 
         Runs several environments concurrently. The next actions are computed
@@ -127,27 +133,47 @@ class BaseAlgo(ABC):
 
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
-
-            preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
-            with torch.no_grad():
-                if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1).unsqueeze(1).unsqueeze(1))
-                else:
-                    dist, value = self.acmodel(preprocessed_obs)
-            action = dist.sample()
-
-            obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
-            done = tuple(a | b for a, b in zip(terminated, truncated))
-
-            # Update experiences values
-
             self.obss[i] = self.obs
+            if use_pastkv:
+                preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
+                with torch.no_grad():
+                    if self.acmodel.recurrent:
+                        # print("memory shape when collecting experience: ", self.memory.shape)
+                        dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1).unsqueeze(1).unsqueeze(1))
+                        if memory.shape[1] < self.recurrence:
+                            memory = torch.cat((memory, torch.zeros(memory.shape[0], 
+                                self.recurrence - memory.shape[1], memory.shape[2], memory.shape[3], device=self.device)), dim=1)
+                        else:
+                            memory = memory[:, 1:, ...]
+                    else:
+                        dist, value = self.acmodel(preprocessed_obs)
+                action = dist.sample()
+
+                obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+                done = tuple(a | b for a, b in zip(terminated, truncated))
+            else:
+                preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
+                with torch.no_grad():
+                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory, self.act_ind)
+                action = dist.sample()
+                obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+                done = tuple(a | b for a, b in zip(terminated, truncated))
+            # Update experiences values
             self.obs = obs
-            if self.acmodel.recurrent:
+            if use_pastkv:
+                # store the input memory of current frame
                 self.memories[i] = self.memory
                 self.memory = memory
+            else:
+                # store the observation of current frame
+                self.memories[i] = self.memory
+                self.memory = torch.cat((self.memory[:, 1:], memory), dim=1)
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+            self.act_indices[i] = self.act_ind
+            self.act_ind = self.act_ind + 1
+            self.act_ind = (self.act_ind * self.mask).long()
+            self.act_ind[self.act_ind > self.recurrence-1] = self.recurrence-1
             self.actions[i] = action
             self.values[i] = value
             if self.reshape_reward is not None:
@@ -180,10 +206,10 @@ class BaseAlgo(ABC):
 
         preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
         with torch.no_grad():
-            if self.acmodel.recurrent:
+            if use_pastkv:
                 _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1).unsqueeze(1).unsqueeze(1))
             else:
-                _, next_value = self.acmodel(preprocessed_obs)
+               _, next_value, _ = self.acmodel(preprocessed_obs, self.memory, self.act_ind)
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
@@ -211,6 +237,8 @@ class BaseAlgo(ABC):
             # T x P -> P x T -> (P * T) x 1
             exps.mask = self.masks.transpose(0, 1).reshape(-1).unsqueeze(1)
         # for all tensors below, T x P -> P x T -> P * T
+        if not self.use_pastkv:
+            exps.act_indices = self.act_indices.transpose(0, 1).reshape(-1)
         exps.action = self.actions.transpose(0, 1).reshape(-1)
         exps.value = self.values.transpose(0, 1).reshape(-1)
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
