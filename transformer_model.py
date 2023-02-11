@@ -12,6 +12,16 @@ from minigrid.core.constants import (
     DIR_TO_VEC
 )
 
+def build_model(cfg, obs_space, action_space):
+    if cfg.Model.use_pastkv:
+        model = TransformerModel_UsePastKV(obs_space, action_space,
+            cfg.Model.token_embed_size, cfg.Model.image_embed_size, cfg.Model.num_decoder_layers, cfg.Model.n_head, cfg.Training.recurrence)
+    else:
+        model = TransformerModel(obs_space, action_space,
+            cfg.Model.token_embed_size, cfg.Model.image_embed_size, cfg.Model.num_decoder_layers, cfg.Model.n_head, cfg.Training.recurrence)
+    
+    return model
+
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
 def init_params(m):
     classname = m.__class__.__name__
@@ -203,7 +213,7 @@ class TransformerModel(nn.Module, torch_ac.RecurrentACModel):
         x = x + self.pos_embed(torch.arange(x.shape[1]).to(x.device))
         
         # causal attention mask
-        attn_mask = torch.triu(torch.ones(x.shape[1], x.shape[1]), diagonal=1).byte().to(x.device)
+        attn_mask = torch.triu(torch.ones(x.shape[1], x.shape[1]), diagonal=1).bool().to(x.device)
         # print("trans encoder input shape: ", x.shape)
         for i in range(self.num_decoder_layers):
             x = self.decoder[i](x, attn_mask)
@@ -214,7 +224,6 @@ class TransformerModel(nn.Module, torch_ac.RecurrentACModel):
 
         value = self.critic(x)
         value = value.squeeze(1)
-
         return dist, value, cur_memory
 
     def _get_embed_text(self, text):
