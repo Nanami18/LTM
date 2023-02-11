@@ -3,6 +3,15 @@ import numpy
 
 import utils
 from utils import device
+import time
+
+import json
+import argparse
+import yaml
+from easydict import EasyDict as edict
+import os
+import numpy as np
+
 
 from envs.memory_minigrid import register_envs
 register_envs()
@@ -10,32 +19,13 @@ register_envs()
 # Parse arguments
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--env", required=True,
-                    help="name of the environment to be run (REQUIRED)")
-parser.add_argument("--model", required=True,
-                    help="name of the trained model (REQUIRED)")
-parser.add_argument("--seed", type=int, default=0,
-                    help="random seed (default: 0)")
-parser.add_argument("--shift", type=int, default=0,
-                    help="number of times the environment is reset at the beginning (default: 0)")
-parser.add_argument("--argmax", action="store_true", default=False,
-                    help="select the action with highest probability (default: False)")
-parser.add_argument("--pause", type=float, default=0.1,
-                    help="pause duration between two consequent actions of the agent (default: 0.1)")
-parser.add_argument("--gif", type=str, default=None,
-                    help="store output as gif with the given filename")
-parser.add_argument("--episodes", type=int, default=1000000,
-                    help="number of episodes to visualize")
-parser.add_argument("--memory", action="store_true", default=False,
-                    help="add a LSTM to the model")
-parser.add_argument("--text", action="store_true", default=False,
-                    help="add a GRU to the model")
-parser.add_argument("--with_embed", action="store_false")
-
+parser.add_argument("--config", type=str, required=True)
 args = parser.parse_args()
 # Set seed for all randomness sources
 
-utils.seed(args.seed)
+with open(args.config, "r") as f:
+    cfg = edict(yaml.safe_load(f))
+utils.seed(cfg.Training.seed)
 
 # Set device
 
@@ -43,21 +33,23 @@ print(f"Device: {device}\n")
 
 # Load environment
 
-env = utils.make_env(args.env, args.seed, render_mode="human")
-for _ in range(args.shift):
+env = utils.make_env(cfg.Env.env_name, cfg.Training.seed, render_mode="human")
+for _ in range(cfg.Inference.shift):
     env.reset()
 print("Environment loaded\n")
 
 # Load agent
 
-model_dir = utils.get_model_dir(args.model)
-agent = utils.Agent(env.observation_space, env.action_space, model_dir,
-                    argmax=args.argmax, use_memory=args.memory, use_text=args.text, with_embed=args.with_embed)
+model_dir = utils.get_model_dir(str(args.config).split("/")[-1][:-5])
+if not cfg:
+    agent = utils.Agent(env.observation_space, env.action_space, model_dir, cfg=cfg)
+else:
+    agent = utils.TransformerAgent(env.observation_space, env.action_space, model_dir, cfg=cfg)
 print("Agent loaded\n")
 
 # Run the agent
 
-if args.gif:
+if cfg.Inference.gif:
     from array2gif import write_gif
 
     frames = []
@@ -65,22 +57,28 @@ if args.gif:
 # Create a window to view the environment
 env.render()
 
-for episode in range(args.episodes):
+for episode in range(cfg.Inference.episodes):
     obs, _ = env.reset()
 
+    print("episode starts")
+    num_acts = 0
     while True:
         env.render()
-        if args.gif:
+        if cfg.Inference.gif:
             frames.append(numpy.moveaxis(env.get_frame(), 2, 0))
 
         action = agent.get_action(obs)
         obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated | truncated
         agent.analyze_feedback(reward, done)
+        num_acts += 1
+        time.sleep(cfg.Inference.pause)
 
         if done or env.window.closed:
             break
-
+    
+    print("episode ends, num actions executed: ", num_acts)
+    print("reward: ", reward)
     if env.window.closed:
         break
 
