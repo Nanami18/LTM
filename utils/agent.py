@@ -2,7 +2,7 @@ import torch
 
 import utils
 from .other import device
-from lstm_model import ACModel, ACModelWithEmbed
+from models import build_model_lstm, build_model_transformer
 
 
 class Agent:

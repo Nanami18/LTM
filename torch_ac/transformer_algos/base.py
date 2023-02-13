@@ -8,8 +8,7 @@ from torch_ac.utils import DictList, ParallelEnv
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
-    def __init__(self, envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, num_decoder_layers, use_pastkv=False):
+    def __init__(self, envs, acmodel, device, preprocess_obss, cfg):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -45,21 +44,20 @@ class BaseAlgo(ABC):
         """
 
         # Store parameters
-
         self.env = ParallelEnv(envs)
         self.acmodel = acmodel
         self.device = device
-        self.num_frames_per_proc = num_frames_per_proc
-        self.discount = discount
-        self.lr = lr
-        self.gae_lambda = gae_lambda
-        self.entropy_coef = entropy_coef
-        self.value_loss_coef = value_loss_coef
-        self.max_grad_norm = max_grad_norm
-        self.recurrence = recurrence
+        self.num_frames_per_proc = cfg.frames_per_proc
+        self.discount = cfg.discount
+        self.lr = cfg.lr
+        self.gae_lambda = cfg.gae_lambda
+        self.entropy_coef = cfg.entropy_coef
+        self.value_loss_coef = cfg.value_loss_coef
+        self.max_grad_norm = cfg.max_grad_norm
+        self.recurrence = cfg.recurrence
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
-        self.reshape_reward = reshape_reward
-        self.num_decoder_layers = num_decoder_layers
+        self.reshape_reward = cfg.reshape_reward
+        self.num_decoder_layers = cfg.num_decoder_layers
 
         # Control parameters
 
@@ -82,7 +80,7 @@ class BaseAlgo(ABC):
 
         self.obs = self.env.reset()
         self.obss = [None] * (shape[0])
-        self.use_pastkv = use_pastkv
+        self.use_pastkv = cfg.use_pastkv
         if self.use_pastkv:
             self.memory = torch.zeros(shape[1], self.recurrence, self.num_decoder_layers, self.acmodel.memory_size, device=self.device)
             self.memories = torch.zeros(*shape, self.recurrence, self.num_decoder_layers, self.acmodel.memory_size, device=self.device)
@@ -110,7 +108,7 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = [0] * self.num_procs
         self.log_num_frames = [0] * self.num_procs
 
-    def collect_experiences(self, use_pastkv):
+    def collect_experiences(self, bc_mode):
         """Collects rollouts and computes advantages.
 
         Runs several environments concurrently. The next actions are computed
@@ -130,11 +128,10 @@ class BaseAlgo(ABC):
             Useful stats about the training process, including the average
             reward, policy loss, value loss, etc.
         """
-
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
             self.obss[i] = self.obs
-            if use_pastkv:
+            if self.use_pastkv:
                 preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
                 with torch.no_grad():
                     if self.acmodel.recurrent:
@@ -157,10 +154,11 @@ class BaseAlgo(ABC):
                     dist, value, memory = self.acmodel(preprocessed_obs, self.memory, self.act_ind)
                 action = dist.sample()
                 obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+                gt_action = self.env.compute_expert_action()
                 done = tuple(a | b for a, b in zip(terminated, truncated))
             # Update experiences values
             self.obs = obs
-            if use_pastkv:
+            if self.use_pastkv:
                 # store the input memory of current frame
                 self.memories[i] = self.memory
                 self.memory = memory
@@ -174,9 +172,12 @@ class BaseAlgo(ABC):
             self.act_ind = self.act_ind + 1
             self.act_ind = (self.act_ind * self.mask).long()
             self.act_ind[self.act_ind > self.recurrence-1] = self.recurrence-1
-            self.actions[i] = action
+            if bc_mode:
+                self.actions[i] = torch.tensor(gt_action, device=self.device, dtype=torch.int)
+            else:
+                self.actions[i] = action
             self.values[i] = value
-            if self.reshape_reward is not None:
+            if self.reshape_reward:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
                     for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
@@ -206,7 +207,7 @@ class BaseAlgo(ABC):
 
         preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
         with torch.no_grad():
-            if use_pastkv:
+            if self.use_pastkv:
                 _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1).unsqueeze(1).unsqueeze(1))
             else:
                _, next_value, _ = self.acmodel(preprocessed_obs, self.memory, self.act_ind)

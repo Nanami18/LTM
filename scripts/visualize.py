@@ -20,12 +20,13 @@ register_envs()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, required=True)
+parser.add_argument("--use_expert", action="store_true")
 args = parser.parse_args()
 # Set seed for all randomness sources
 
 with open(args.config, "r") as f:
     cfg = edict(yaml.safe_load(f))
-utils.seed(cfg.Training.seed)
+utils.seed(cfg.seed)
 
 # Set device
 
@@ -33,8 +34,8 @@ print(f"Device: {device}\n")
 
 # Load environment
 
-env = utils.make_env(cfg.Env.env_name, cfg.Training.seed, render_mode="human")
-for _ in range(cfg.Inference.shift):
+env = utils.make_env(cfg.env_name, cfg.seed, render_mode="human")
+for _ in range(cfg.shift):
     env.reset()
 print("Environment loaded\n")
 
@@ -49,7 +50,7 @@ print("Agent loaded\n")
 
 # Run the agent
 
-if cfg.Inference.gif:
+if cfg.gif:
     from array2gif import write_gif
 
     frames = []
@@ -57,22 +58,25 @@ if cfg.Inference.gif:
 # Create a window to view the environment
 env.render()
 
-for episode in range(cfg.Inference.episodes):
+for episode in range(cfg.episodes):
     obs, _ = env.reset()
 
     print("episode starts")
     num_acts = 0
     while True:
         env.render()
-        if cfg.Inference.gif:
+        if cfg.gif:
             frames.append(numpy.moveaxis(env.get_frame(), 2, 0))
-
-        action = agent.get_action(obs)
+        
+        if args.use_expert and num_acts > 15:
+            action = env.compute_expert_action()
+        else:
+            action = agent.get_action(obs)
         obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated | truncated
         agent.analyze_feedback(reward, done)
         num_acts += 1
-        time.sleep(cfg.Inference.pause)
+        time.sleep(cfg.pause)
 
         if done or env.window.closed:
             break

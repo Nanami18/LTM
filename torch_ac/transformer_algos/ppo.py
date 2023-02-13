@@ -8,25 +8,21 @@ class PPOAlgo(BaseAlgo):
     """The Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
 
-    def __init__(self, envs, acmodel, device=None, num_frames_per_proc=None, discount=0.99, lr=0.001, gae_lambda=0.95,
-                 entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
-                 adam_eps=1e-8, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
-                 reshape_reward=None, num_decoder_layers=1, use_pastkv=False):
-        num_frames_per_proc = num_frames_per_proc or 128
+    def __init__(self, envs, acmodel, device=None, preprocess_obss=None, cfg=None):
+        cfg.frames_per_proc = cfg.frames_per_proc or 128
 
-        super().__init__(envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, num_decoder_layers)
+        super().__init__(envs, acmodel, device, preprocess_obss, cfg)
 
-        self.clip_eps = clip_eps
-        self.epochs = epochs
-        self.batch_size = batch_size
+        self.clip_eps = cfg.clip_eps
+        self.epochs = cfg.epochs
+        self.batch_size = cfg.batch_size
 
         assert self.batch_size % self.recurrence == 0
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), lr, eps=adam_eps)
+        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), cfg.lr, eps=cfg.optim_eps)
         self.batch_num = 0
 
-    def update_parameters(self, exps, use_pastkv):
+    def update_parameters(self, exps, bc_mode):
         # Collect experiences
 
         for _ in range(self.epochs):
@@ -58,7 +54,7 @@ class PPOAlgo(BaseAlgo):
 
                     # Compute loss
 
-                    if use_pastkv:
+                    if self.use_pastkv:
                         # print("memory shape when training: ", memory.shape)
                         dist, value, memory = self.acmodel(sb.obs, memory * sb.mask.unsqueeze(1).unsqueeze(1))
                         if memory.shape[1] < self.recurrence:
@@ -72,10 +68,13 @@ class PPOAlgo(BaseAlgo):
 
                     entropy = dist.entropy().mean()
 
-                    ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
-                    surr1 = ratio * sb.advantage
-                    surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
-                    policy_loss = -torch.min(surr1, surr2).mean()
+                    if not bc_mode:
+                        ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
+                        surr1 = ratio * sb.advantage
+                        surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
+                        policy_loss = -torch.min(surr1, surr2).mean()
+                    else:
+                        policy_loss = -dist.log_prob(sb.action).mean()
 
                     value_clipped = sb.value + torch.clamp(value - sb.value, -self.clip_eps, self.clip_eps)
                     surr1 = (value - sb.returnn).pow(2)
