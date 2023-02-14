@@ -7,7 +7,8 @@ import sys
 
 import utils
 from utils import device
-from lstm_model import ACModel, ACModelWithEmbed
+import models
+from configs.config import cfg, cfg_from_file
 
 from envs.memory_minigrid import register_envs
 register_envs()
@@ -18,66 +19,20 @@ register_envs()
 parser = argparse.ArgumentParser()
 
 # General parameters
-parser.add_argument("--algo", required=True,
-                    help="algorithm to use: a2c | ppo (REQUIRED)")
-parser.add_argument("--env", required=True,
-                    help="name of the environment to train on (REQUIRED)")
-parser.add_argument("--model", default=None,
-                    help="name of the model (default: {ENV}_{ALGO}_{TIME})")
-parser.add_argument("--seed", type=int, default=1,
-                    help="random seed (default: 1)")
-parser.add_argument("--log-interval", type=int, default=1,
-                    help="number of updates between two logs (default: 1)")
-parser.add_argument("--save-interval", type=int, default=10,
-                    help="number of updates between two saves (default: 10, 0 means no saving)")
-parser.add_argument("--procs", type=int, default=16,
-                    help="number of processes (default: 16)")
-parser.add_argument("--frames", type=int, default=10**7,
-                    help="number of frames of training (default: 1e7)")
-
-# Parameters for main algorithm
-parser.add_argument("--epochs", type=int, default=4,
-                    help="number of epochs for PPO (default: 4)")
-parser.add_argument("--batch-size", type=int, default=256,
-                    help="batch size for PPO (default: 256)")
-parser.add_argument("--frames-per-proc", type=int, default=None,
-                    help="number of frames per process before update (default: 5 for A2C and 128 for PPO)")
-parser.add_argument("--discount", type=float, default=0.99,
-                    help="discount factor (default: 0.99)")
-parser.add_argument("--lr", type=float, default=0.001,
-                    help="learning rate (default: 0.001)")
-parser.add_argument("--gae-lambda", type=float, default=0.95,
-                    help="lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
-parser.add_argument("--entropy-coef", type=float, default=0.01,
-                    help="entropy term coefficient (default: 0.01)")
-parser.add_argument("--value-loss-coef", type=float, default=0.5,
-                    help="value loss term coefficient (default: 0.5)")
-parser.add_argument("--max-grad-norm", type=float, default=0.5,
-                    help="maximum norm of gradient (default: 0.5)")
-parser.add_argument("--optim-eps", type=float, default=1e-8,
-                    help="Adam and RMSprop optimizer epsilon (default: 1e-8)")
-parser.add_argument("--optim-alpha", type=float, default=0.99,
-                    help="RMSprop optimizer alpha (default: 0.99)")
-parser.add_argument("--clip-eps", type=float, default=0.2,
-                    help="clipping epsilon for PPO (default: 0.2)")
-parser.add_argument("--recurrence", type=int, default=1,
-                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
-parser.add_argument("--text", action="store_true", default=False,
-                    help="add a GRU to the model to handle text input")
-parser.add_argument("--with_embed", action="store_false")
-parser.add_argument("--image_embed_size", type=int, default=128)
+parser.add_argument("--config", type=str, required=True)
 
 if __name__ == "__main__":
     args = parser.parse_args()
-
-    args.mem = args.recurrence > 1
+    cfg_from_file(args.config)
+    
+    cfg.mem = cfg.recurrence > 1
 
     # Set run dir
 
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-    default_model_name = f"{args.env}_{args.algo}_seed{args.seed}_{date}"
+    default_model_name = f"{cfg.env_name}_{cfg.algo}_seed{cfg.seed}_{date}"
 
-    model_name = args.model or default_model_name
+    model_name = str(args.config).split("/")[-1][:-5] or default_model_name
     model_dir = utils.get_model_dir(model_name)
 
     # Load loggers and Tensorboard writer
@@ -89,11 +44,11 @@ if __name__ == "__main__":
     # Log command and all script arguments
 
     txt_logger.info("{}\n".format(" ".join(sys.argv)))
-    txt_logger.info("{}\n".format(args))
+    txt_logger.info("{}\n".format(cfg))
 
     # Set seed for all randomness sources
 
-    utils.seed(args.seed)
+    utils.seed(cfg.seed)
 
     # Set device
 
@@ -102,8 +57,8 @@ if __name__ == "__main__":
     # Load environments
 
     envs = []
-    for i in range(args.procs):
-        envs.append(utils.make_env(args.env, args.seed + 10000 * i))
+    for i in range(cfg.procs):
+        envs.append(utils.make_env(cfg.env_name, cfg.seed + 10000 * i))
     txt_logger.info("Environments loaded\n")
 
     # Load training status
@@ -121,10 +76,7 @@ if __name__ == "__main__":
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-    if args.with_embed:
-        acmodel = ACModelWithEmbed(obs_space, envs[0].action_space, args.mem, args.text, image_embed_size=args.image_embed_size)
-    else:
-        acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text, image_embed_size=args.image_embed_size)
+    acmodel = models.build_model_lstm(cfg, obs_space, envs[0].action_space)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)
@@ -133,16 +85,14 @@ if __name__ == "__main__":
 
     # Load algo
 
-    if args.algo == "a2c":
-        algo = torch_ac.A2CAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
-                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_alpha, args.optim_eps, preprocess_obss)
-    elif args.algo == "ppo":
-        algo = torch_ac.PPOAlgo(envs, acmodel, device, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
-                                args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                                args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+    if cfg.algo == "a2c":
+        algo = torch_ac.A2CAlgo(envs, acmodel, device, cfg.frames_per_proc, cfg.discount, cfg.lr, cfg.gae_lambda,
+                                cfg.entropy_coef, cfg.value_loss_coef, cfg.max_grad_norm, cfg.recurrence,
+                                cfg.optim_alpha, cfg.optim_eps, preprocess_obss)
+    elif cfg.algo == "ppo":
+        algo = torch_ac.PPOAlgo(envs, acmodel, device, preprocess_obss, cfg)
     else:
-        raise ValueError("Incorrect algorithm name: {}".format(args.algo))
+        raise ValueError("Incorrect algorithm name: {}".format(cfg.algo))
 
     if "optimizer_state" in status:
         algo.optimizer.load_state_dict(status["optimizer_state"])
@@ -154,11 +104,16 @@ if __name__ == "__main__":
     update = status["update"]
     start_time = time.time()
 
-    while num_frames < args.frames:
+    print(cfg.frames)
+    while num_frames < cfg.frames:
+        if num_frames < cfg.bc_period:
+            bc_mode = True
+        else:
+            bc_mode = False
         # Update model parameters
         update_start_time = time.time()
-        exps, logs1 = algo.collect_experiences()
-        logs2 = algo.update_parameters(exps)
+        exps, logs1 = algo.collect_experiences(bc_mode)
+        logs2 = algo.update_parameters(exps, bc_mode)
         logs = {**logs1, **logs2}
         update_end_time = time.time()
 
@@ -167,7 +122,7 @@ if __name__ == "__main__":
 
         # Print logs
 
-        if update % args.log_interval == 0:
+        if update % cfg.log_interval == 0:
             fps = logs["num_frames"] / (update_end_time - update_start_time)
             duration = int(time.time() - start_time)
             return_per_episode = utils.synthesize(logs["return_per_episode"])
@@ -200,7 +155,7 @@ if __name__ == "__main__":
 
         # Save status
 
-        if args.save_interval > 0 and update % args.save_interval == 0:
+        if cfg.save_interval > 0 and update % cfg.save_interval == 0:
             status = {"num_frames": num_frames, "update": update,
                       "model_state": acmodel.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
             if hasattr(preprocess_obss, "vocab"):
