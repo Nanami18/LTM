@@ -8,8 +8,7 @@ from torch_ac.utils import DictList, ParallelEnv
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
-    def __init__(self, envs, acmodel, device, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward):
+    def __init__(self, envs, acmodel, device, preprocess_obss, cfg):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -47,18 +46,19 @@ class BaseAlgo(ABC):
         # Store parameters
 
         self.env = ParallelEnv(envs)
+        self.cfg = cfg
         self.acmodel = acmodel
         self.device = device
-        self.num_frames_per_proc = num_frames_per_proc
-        self.discount = discount
-        self.lr = lr
-        self.gae_lambda = gae_lambda
-        self.entropy_coef = entropy_coef
-        self.value_loss_coef = value_loss_coef
-        self.max_grad_norm = max_grad_norm
-        self.recurrence = recurrence
+        self.num_frames_per_proc = cfg.frames_per_proc
+        self.discount = cfg.discount
+        self.lr = cfg.lr
+        self.gae_lambda = cfg.gae_lambda
+        self.entropy_coef = cfg.entropy_coef
+        self.value_loss_coef = cfg.value_loss_coef
+        self.max_grad_norm = cfg.max_grad_norm
+        self.recurrence = cfg.recurrence
         self.preprocess_obss = preprocess_obss or default_preprocess_obss
-        self.reshape_reward = reshape_reward
+        self.reshape_reward = cfg.reshape_reward
 
         # Control parameters
 
@@ -103,7 +103,7 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = [0] * self.num_procs
         self.log_num_frames = [0] * self.num_procs
 
-    def collect_experiences(self):
+    def collect_experiences(self, bc_mode):
         """Collects rollouts and computes advantages.
 
         Runs several environments concurrently. The next actions are computed
@@ -134,8 +134,11 @@ class BaseAlgo(ABC):
                 else:
                     dist, value = self.acmodel(preprocessed_obs)
             action = dist.sample()
-
-            obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+            gt_action = torch.tensor(self.env.compute_expert_action(), device=self.device, dtype=torch.int)
+            if bc_mode and self.cfg.teacher_forcing:
+                obs, reward, terminated, truncated, _ = self.env.step(gt_action.cpu().numpy())
+            else:
+                obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
             # Update experiences values
@@ -147,9 +150,12 @@ class BaseAlgo(ABC):
                 self.memory = memory
             self.masks[i] = self.mask
             self.mask = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
-            self.actions[i] = action
+            if bc_mode:
+                self.actions[i] = gt_action
+            else:
+                self.actions[i] = action
             self.values[i] = value
-            if self.reshape_reward is not None:
+            if self.reshape_reward:
                 self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
                     for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
