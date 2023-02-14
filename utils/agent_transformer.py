@@ -2,7 +2,7 @@ import torch
 
 import utils
 from .other import device
-from transformer_model import TransformerModel
+from models import build_model_transformer
 
 
 class TransformerAgent:
@@ -14,9 +14,8 @@ class TransformerAgent:
 
     def __init__(self, obs_space, action_space, model_dir, cfg, num_envs=1):
         obs_space, self.preprocess_obss = utils.get_obss_preprocessor(obs_space)
-        self.acmodel = TransformerModel(obs_space, action_space, num_decoder_layers=cfg.Model.num_decoder_layers, 
-            n_head=cfg.Model.n_head, recurrence=cfg.Training.recurrence)
-        self.argmax = cfg.Inference.argmax
+        self.acmodel = build_model_transformer(cfg, obs_space, action_space)
+        self.argmax = cfg.argmax
         self.num_envs = num_envs
 
         self.acmodel.load_state_dict(utils.get_model_state(model_dir))
