@@ -70,6 +70,11 @@ def register_envs():
         entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_v0_hallwayobj",
         kwargs={"size":9}
     )
+    gym.register(
+        id="MiniGrid-MemoryS9-v0-almosthallwayobj",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_v0_hallwayobj",
+        kwargs={"size":9, "almost_hallway":True}
+    )
 
 class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
     """
@@ -158,6 +163,63 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
 
         self.mission = 'go to the matching object at the end of the hallway'
 
+    def compute_expert_action(self):
+        tx, ty = self.success_pos
+        goal_positions = set([(tx, ty)])
+        
+        # compute shortest path
+        agent_pose = self.agent_pos[0], self.agent_pos[1], self.agent_dir
+        open_set = [(agent_pose, [])]
+        closed_set = set()
+        while True:
+            try:
+                pose, path = open_set.pop(0)
+            except IndexError:
+                #image = Image.fromarray(self.render('rgb_array'))
+                #image.save('./no_path.png')
+                #raise ExpertException(
+                #    'No path to goal. This should never happen.')
+                # this actually can happen if the agent moves a ball in the way
+                # of the goal
+                path = [self.actions.done]
+                break
+                
+            closed_set.add(pose)
+            x, y, direction = pose
+            if (x,y) in goal_positions:
+                path.append(self.actions.done)
+                break
+            # left
+            # breakpoint()
+            left_pose = (x, y, (direction-1)%4)
+            if left_pose not in closed_set:
+                left_path = path[:]
+                left_path.append(self.actions.left)
+                open_set.append((left_pose, left_path))
+            
+            # right
+            right_pose = (x, y, (direction+1)%4)
+            if right_pose not in closed_set:
+                right_path = path[:]
+                right_path.append(self.actions.right)
+                open_set.append((right_pose, right_path))
+            
+            # forward
+            vx, vy = DIR_TO_VEC[direction]
+            fx = x + vx
+            fy = y + vy
+            forward_cell = self.grid.get(fx, fy)
+            if forward_cell is None or forward_cell.can_overlap():
+                forward_pose = (fx, fy, direction)
+                if forward_pose not in closed_set:
+                    forward_path = path[:]
+                    forward_path.append(self.actions.forward)
+                    open_set.append((forward_pose, forward_path))
+        
+        return path[0]
+
+
+
 
 class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
     """
@@ -173,9 +235,11 @@ class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
         self,
         size=13,
         random_length=False,
+        almost_hallway=False,
         **kwargs,
     ):
         self.random_length = random_length
+        self.almost_hallway = almost_hallway
         super().__init__(
             size=size,
             max_steps=5*size**2,
@@ -228,16 +292,18 @@ class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
         self.grid.set(1, height // 2 - 1, start_room_obj('green'))
         self.grid.set(2, height // 2 - 1, start_room_obj('green'))
         self.grid.set(3, height // 2 - 1, start_room_obj('green'))
-        self.grid.set(4, height // 2 - 1, start_room_obj('green'))
-        self.grid.set(5, height // 2 - 1, start_room_obj('green'))
-        self.grid.set(6, height // 2 - 1, start_room_obj('green'))
+        if not self.almost_hallway:
+            self.grid.set(4, height // 2 - 1, start_room_obj('green'))
+            self.grid.set(5, height // 2 - 1, start_room_obj('green'))
+            self.grid.set(6, height // 2 - 1, start_room_obj('green'))
 
         self.grid.set(1, height // 2 + 1, start_room_obj('green'))
         self.grid.set(2, height // 2 + 1, start_room_obj('green'))
         self.grid.set(3, height // 2 + 1, start_room_obj('green'))
-        self.grid.set(4, height // 2 + 1, start_room_obj('green'))
-        self.grid.set(5, height // 2 + 1, start_room_obj('green'))
-        self.grid.set(6, height // 2 + 1, start_room_obj('green'))
+        if not self.almost_hallway:
+            self.grid.set(4, height // 2 + 1, start_room_obj('green'))
+            self.grid.set(5, height // 2 + 1, start_room_obj('green'))
+            self.grid.set(6, height // 2 + 1, start_room_obj('green'))
 
         other_objs = self._rand_elem([[Ball, Key]])
         pos0 = (hallway_end + 1, height // 2 - 2)
@@ -256,3 +322,58 @@ class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
         # self.place_agent(top=(2,4), size=(1,1))
 
         self.mission = 'go to the matching object at the end of the hallway'
+
+    def compute_expert_action(self):
+        tx, ty = self.success_pos
+        goal_positions = set([(tx, ty)])
+        
+        # compute shortest path
+        agent_pose = self.agent_pos[0], self.agent_pos[1], self.agent_dir
+        open_set = [(agent_pose, [])]
+        closed_set = set()
+        while True:
+            try:
+                pose, path = open_set.pop(0)
+            except IndexError:
+                #image = Image.fromarray(self.render('rgb_array'))
+                #image.save('./no_path.png')
+                #raise ExpertException(
+                #    'No path to goal. This should never happen.')
+                # this actually can happen if the agent moves a ball in the way
+                # of the goal
+                path = [self.actions.done]
+                break
+                
+            closed_set.add(pose)
+            x, y, direction = pose
+            if (x,y) in goal_positions:
+                path.append(self.actions.done)
+                break
+            # left
+            # breakpoint()
+            left_pose = (x, y, (direction-1)%4)
+            if left_pose not in closed_set:
+                left_path = path[:]
+                left_path.append(self.actions.left)
+                open_set.append((left_pose, left_path))
+            
+            # right
+            right_pose = (x, y, (direction+1)%4)
+            if right_pose not in closed_set:
+                right_path = path[:]
+                right_path.append(self.actions.right)
+                open_set.append((right_pose, right_path))
+            
+            # forward
+            vx, vy = DIR_TO_VEC[direction]
+            fx = x + vx
+            fy = y + vy
+            forward_cell = self.grid.get(fx, fy)
+            if forward_cell is None or forward_cell.can_overlap():
+                forward_pose = (fx, fy, direction)
+                if forward_pose not in closed_set:
+                    forward_path = path[:]
+                    forward_path.append(self.actions.forward)
+                    open_set.append((forward_pose, forward_path))
+        
+        return path[0]
