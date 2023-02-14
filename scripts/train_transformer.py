@@ -7,7 +7,7 @@ import sys
 
 import utils
 from utils import device
-from transformer_model import build_model
+import models
 
 import json
 import argparse
@@ -16,6 +16,7 @@ from functools import partial
 from easydict import EasyDict as edict
 import os
 import numpy as np
+from configs.config import cfg, cfg_from_file
 
 from envs.memory_minigrid import register_envs
 register_envs()
@@ -28,13 +29,12 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, required=True)
     args = parser.parse_args()
     
-    with open(args.config, "r") as f:
-        cfg = edict(yaml.safe_load(f))
+    cfg_from_file(args.config)
 
     # Set run dir
 
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-    default_model_name = f"{cfg.Env.env_name}_{cfg.Training.algo}_seed{cfg.Training.seed}_{date}"
+    default_model_name = f"{cfg.env_name}_{cfg.algo}_seed{cfg.seed}_{date}"
 
     model_name = str(args.config).split("/")[-1][:-5] or default_model_name
     model_dir = utils.get_model_dir(model_name)
@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     # Set seed for all randomness sources
 
-    utils.seed(cfg.Training.seed)
+    utils.seed(cfg.seed)
 
     # Set device
 
@@ -61,8 +61,8 @@ if __name__ == "__main__":
     # Load environments
 
     envs = []
-    for i in range(cfg.Training.procs):
-        envs.append(utils.make_env(cfg.Env.env_name, cfg.Training.seed + 10000 * i))
+    for i in range(cfg.procs):
+        envs.append(utils.make_env(cfg.env_name, cfg.seed + 10000 * i))
     txt_logger.info("Environments loaded\n")
 
     # Load training status
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-    if cfg.Model.use_pastkv:
+    if cfg.use_pastkv:
         obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
     else:
         obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-    acmodel = build_model(cfg, obs_space, envs[0].action_space)
+    acmodel = models.build_model_transformer(cfg, obs_space, envs[0].action_space)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)
@@ -92,17 +92,12 @@ if __name__ == "__main__":
 
     # Load algo
 
-    if cfg.Training.algo == "a2c":
-        algo = A2CAlgo(envs, acmodel, device, cfg.Training.frames_per_proc, cfg.Training.discount, cfg.Training.lr, cfg.Training.gae_lambda,
-                                cfg.Training.entropy_coef, cfg.Training.value_loss_coef, cfg.Training.max_grad_norm, cfg.Training.recurrence,
-                                cfg.Training.optim_alpha, cfg.Training.optim_eps, preprocess_obss, None, cfg.Model.num_decoder_layers)
-    elif cfg.Training.algo == "ppo":
-        algo = PPOAlgo(envs, acmodel, device, cfg.Training.frames_per_proc, cfg.Training.discount, cfg.Training.lr, cfg.Training.gae_lambda,
-                                cfg.Training.entropy_coef, cfg.Training.value_loss_coef, cfg.Training.max_grad_norm, cfg.Training.recurrence,
-                                cfg.Training.optim_eps, cfg.Training.clip_eps, cfg.Training.epochs, cfg.Training.batch_size, preprocess_obss, None, 
-                                cfg.Model.num_decoder_layers, use_pastkv = cfg.Model.use_pastkv)
+    if cfg.algo == "a2c":
+        algo = A2CAlgo(envs, acmodel, device, preprocess_obss, cfg)
+    elif cfg.algo == "ppo":
+        algo = PPOAlgo(envs, acmodel, device, preprocess_obss, cfg)
     else:
-        raise ValueError("Incorrect algorithm name: {}".format(cfg.Training.algo))
+        raise ValueError("Incorrect algorithm name: {}".format(cfg.algo))
 
     if "optimizer_state" in status:
         algo.optimizer.load_state_dict(status["optimizer_state"])
@@ -114,11 +109,15 @@ if __name__ == "__main__":
     update = status["update"]
     start_time = time.time()
 
-    while num_frames < cfg.Training.frames:
+    while num_frames < cfg.frames:
+        if num_frames < cfg.bc_period:
+            bc_mode = True
+        else:
+            bc_mode = False
         # Update model parameters
         update_start_time = time.time()
-        exps, logs1 = algo.collect_experiences(cfg.Model.use_pastkv)
-        logs2 = algo.update_parameters(exps, cfg.Model.use_pastkv)
+        exps, logs1 = algo.collect_experiences(bc_mode)
+        logs2 = algo.update_parameters(exps, bc_mode)
         logs = {**logs1, **logs2}
         update_end_time = time.time()
 
@@ -126,7 +125,7 @@ if __name__ == "__main__":
         update += 1
 
         # Print logs
-        if update % cfg.Training.log_interval == 0:
+        if update % cfg.log_interval == 0:
             fps = logs["num_frames"] / (update_end_time - update_start_time)
             duration = int(time.time() - start_time)
             return_per_episode = utils.synthesize(logs["return_per_episode"])
@@ -159,7 +158,7 @@ if __name__ == "__main__":
 
         # Save status
 
-        if cfg.Training.save_interval > 0 and update % cfg.Training.save_interval == 0:
+        if cfg.save_interval > 0 and update % cfg.save_interval == 0:
             status = {"num_frames": num_frames, "update": update,
                       "model_state": acmodel.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
             if hasattr(preprocess_obss, "vocab"):
