@@ -11,6 +11,7 @@ import yaml
 from easydict import EasyDict as edict
 import os
 import numpy as np
+from configs.config import cfg, cfg_from_file
 
 
 from envs.memory_minigrid import register_envs
@@ -24,8 +25,7 @@ parser.add_argument("--use_expert", action="store_true")
 args = parser.parse_args()
 # Set seed for all randomness sources
 
-with open(args.config, "r") as f:
-    cfg = edict(yaml.safe_load(f))
+cfg_from_file(args.config)
 utils.seed(cfg.seed)
 
 # Set device
@@ -42,7 +42,7 @@ print("Environment loaded\n")
 # Load agent
 
 model_dir = utils.get_model_dir(str(args.config).split("/")[-1][:-5])
-if not cfg:
+if cfg.use_lstm:
     agent = utils.Agent(env.observation_space, env.action_space, model_dir, cfg=cfg)
 else:
     agent = utils.TransformerAgent(env.observation_space, env.action_space, model_dir, cfg=cfg)
@@ -68,7 +68,7 @@ for episode in range(cfg.episodes):
         if cfg.gif:
             frames.append(numpy.moveaxis(env.get_frame(), 2, 0))
         
-        if args.use_expert and num_acts > 15:
+        if args.use_expert:
             action = env.compute_expert_action()
         else:
             action = agent.get_action(obs)
@@ -86,7 +86,7 @@ for episode in range(cfg.episodes):
     if env.window.closed:
         break
 
-if args.gif:
+if cfg.gif:
     print("Saving gif... ", end="")
     write_gif(numpy.array(frames), args.gif+".gif", fps=1/args.pause)
     print("Done.")
