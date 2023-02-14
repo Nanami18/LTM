@@ -1,0 +1,2 @@
+from models.lstm_model import build_model as build_model_lstm
+from models.transformer_model import build_model as build_model_transformer
