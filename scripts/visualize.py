@@ -26,6 +26,7 @@ args = parser.parse_args()
 # Set seed for all randomness sources
 
 cfg_from_file(args.config)
+cfg.procs = 1
 utils.seed(cfg.seed)
 
 # Set device
