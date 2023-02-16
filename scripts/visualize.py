@@ -22,6 +22,7 @@ register_envs()
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", type=str, required=True)
 parser.add_argument("--use_expert", action="store_true")
+parser.add_argument("--custom_dir", type=str, default=None)
 args = parser.parse_args()
 # Set seed for all randomness sources
 
@@ -42,7 +43,10 @@ print("Environment loaded\n")
 
 # Load agent
 
-model_dir = utils.get_model_dir(str(args.config).split("/")[-1][:-5])
+if args.custom_dir is not None:
+    model_name = args.custom_dir
+else:
+    model_name = str(args.config).split("/")[-1][:-5] or default_model_name
 if cfg.use_lstm:
     agent = utils.Agent(env.observation_space, env.action_space, model_dir, cfg=cfg)
 else:

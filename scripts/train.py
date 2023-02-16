@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser()
 
 # General parameters
 parser.add_argument("--config", type=str, required=True)
+parser.add_argument("--custom_dir", type=str, default=None)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -31,10 +32,12 @@ if __name__ == "__main__":
 
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
     default_model_name = f"{cfg.env_name}_{cfg.algo}_seed{cfg.seed}_{date}"
-
-    model_name = str(args.config).split("/")[-1][:-5] or default_model_name
+    
+    if args.custom_dir is not None:
+        model_name = args.custom_dir
+    else:
+        model_name = str(args.config).split("/")[-1][:-5] or default_model_name
     model_dir = utils.get_model_dir(model_name)
-
     # Load loggers and Tensorboard writer
 
     txt_logger = utils.get_txt_logger(model_dir)
