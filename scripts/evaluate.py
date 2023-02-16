@@ -45,6 +45,7 @@ if __name__ == "__main__":
         model_name = args.custom_dir
     else:
         model_name = str(args.config).split("/")[-1][:-5] or default_model_name
+    model_dir = utils.get_model_dir(model_name)
     if cfg.use_lstm:
         agent = utils.Agent(env.observation_space, env.action_space, model_dir, cfg=cfg)
     else:
