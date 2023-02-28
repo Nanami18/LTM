@@ -11,6 +11,7 @@ from minigrid.core.constants import (
     OBJECT_TO_IDX,
     DIR_TO_VEC
 )
+# Action: 0 left 1 right 2 forward 6 done
 from minigrid.core.world_object import (
     Wall,
     Ball,
@@ -143,13 +144,22 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
 
         # Place objects
         start_room_obj = self._rand_elem([Key, Ball])
-        self.grid.set(1, height // 2 - 1, start_room_obj('green'))
+        if start_room_obj == Key:
+            self.grid.set(1, height // 2 - 1, start_room_obj('green'))
+        else:
+            self.grid.set(1, height // 2 - 1, start_room_obj('blue'))
 
         other_objs = self._rand_elem([[Ball, Key], [Key, Ball]])
         pos0 = (hallway_end + 1, height // 2 - 2)
         pos1 = (hallway_end + 1, height // 2 + 2)
-        self.grid.set(*pos0, other_objs[0]('green'))
-        self.grid.set(*pos1, other_objs[1]('green'))
+        if other_objs[0] == Key:
+            self.grid.set(*pos0, other_objs[0]('green'))
+        else:
+            self.grid.set(*pos0, other_objs[0]('blue'))
+        if other_objs[1] == Key:
+            self.grid.set(*pos1, other_objs[1]('green'))
+        else:
+            self.grid.set(*pos1, other_objs[1]('blue'))
 
         # Choose the target objects
         if start_room_obj == other_objs[0]:
@@ -220,7 +230,7 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
 
 
 
-
+# Make the target object location deterministic
 class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
     """
     This environment is a memory test. The agent starts in a small room
@@ -289,27 +299,28 @@ class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
 
         # Place objects
         start_room_obj = self._rand_elem([Key, Ball])
-        self.grid.set(1, height // 2 - 1, start_room_obj('green'))
-        self.grid.set(2, height // 2 - 1, start_room_obj('green'))
-        self.grid.set(3, height // 2 - 1, start_room_obj('green'))
+        color_map = {Key : 'green', Ball : 'blue'}
+        self.grid.set(1, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
+        # self.grid.set(2, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
+        # self.grid.set(3, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
         if not self.almost_hallway:
-            self.grid.set(4, height // 2 - 1, start_room_obj('green'))
-            self.grid.set(5, height // 2 - 1, start_room_obj('green'))
-            self.grid.set(6, height // 2 - 1, start_room_obj('green'))
+            self.grid.set(4, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
+            self.grid.set(5, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
+            self.grid.set(6, height // 2 - 1, start_room_obj(color_map[start_room_obj]))
 
-        self.grid.set(1, height // 2 + 1, start_room_obj('green'))
-        self.grid.set(2, height // 2 + 1, start_room_obj('green'))
-        self.grid.set(3, height // 2 + 1, start_room_obj('green'))
+        self.grid.set(1, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
+        # self.grid.set(2, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
+        # self.grid.set(3, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
         if not self.almost_hallway:
-            self.grid.set(4, height // 2 + 1, start_room_obj('green'))
-            self.grid.set(5, height // 2 + 1, start_room_obj('green'))
-            self.grid.set(6, height // 2 + 1, start_room_obj('green'))
+            self.grid.set(4, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
+            self.grid.set(5, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
+            self.grid.set(6, height // 2 + 1, start_room_obj(color_map[start_room_obj]))
 
         other_objs = self._rand_elem([[Ball, Key]])
         pos0 = (hallway_end + 1, height // 2 - 2)
         pos1 = (hallway_end + 1, height // 2 + 2)
-        self.grid.set(*pos0, other_objs[0]('green'))
-        self.grid.set(*pos1, other_objs[1]('green'))
+        self.grid.set(*pos0, other_objs[0](color_map[other_objs[0]]))
+        self.grid.set(*pos1, other_objs[1](color_map[other_objs[1]]))
 
         # Choose the target objects
         if start_room_obj == other_objs[0]:
