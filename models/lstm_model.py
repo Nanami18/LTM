@@ -14,8 +14,12 @@ from minigrid.core.constants import (
 
 def build_model(cfg, obs_space, action_space):
     if cfg.use_embed:
-        model = ACModelWithEmbed(obs_space, action_space,
-            cfg.use_memory, cfg.use_text, cfg.token_embed_size, cfg.image_embed_size)
+        if cfg.use_linear_procs:
+            model = ACModelWithLinearProcs(obs_space, action_space,
+                cfg.use_memory, cfg.use_text, cfg.token_embed_size, cfg.image_embed_size)
+        else:
+            model = ACModelWithEmbed(obs_space, action_space,
+                cfg.use_memory, cfg.use_text, cfg.token_embed_size, cfg.image_embed_size, cheat=cfg.cheat)
     else:
         model = ACModel(obs_space, action_space,
             cfg.use_memory, cfg.use_text)
@@ -25,14 +29,99 @@ def build_model(cfg, obs_space, action_space):
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
 def init_params(m):
     classname = m.__class__.__name__
-    if classname.find("Linear") != -1:
+    if (classname.find("Linear") != -1 and classname.find("ACModel") == -1) or classname.find("Embedding") != -1 :
         m.weight.data.normal_(0, 1)
-        m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
-        if m.bias is not None:
+        # m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
+        if classname != "Embedding" and m.bias is not None:
             m.bias.data.fill_(0)
 
-class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
+class ACModelWithLinearProcs(nn.Module, torch_ac.RecurrentACModel):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False, embed_size=16, image_embed_size=128):
+        super().__init__()
+
+        # Decide which components are enabled
+        self.use_text = use_text
+        self.use_memory = use_memory
+       
+        self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), embed_size)
+        self.image_procs = nn.Sequential(nn.Linear(embed_size, image_embed_size), nn.ReLU(), nn.Linear(image_embed_size, image_embed_size))
+
+        self.image_embedding_size = image_embed_size
+
+        # Define memory
+        if self.use_memory:
+            self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+
+        # Define text embedding
+        if self.use_text:
+            self.word_embedding_size = 32
+            self.word_embedding = nn.Embedding(obs_space["text"], self.word_embedding_size)
+            self.text_embedding_size = 128
+            self.text_rnn = nn.GRU(self.word_embedding_size, self.text_embedding_size, batch_first=True)
+
+        # Resize image embedding
+        self.embedding_size = self.semi_memory_size
+        if self.use_text:
+            self.embedding_size += self.text_embedding_size
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.embedding_size, self.embedding_size),
+            nn.Tanh(),
+            nn.Linear(self.embedding_size, action_space.n)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.embedding_size, self.embedding_size),
+            nn.Tanh(),
+            nn.Linear(self.embedding_size, 1)
+        )
+
+        # Initialize parameters correctly
+        self.apply(init_params)
+
+    @property
+    def memory_size(self):
+        return 2*self.semi_memory_size
+
+    @property
+    def semi_memory_size(self):
+        return self.image_embedding_size
+
+    def forward(self, obs, memory):
+        
+        x = obs.image
+        x = torch.flatten(x[:, :, :, 0], start_dim=1)
+        x = torch.where(torch.sum(x == 5, dim=1) > torch.sum(x == 6, dim=1), torch.tensor(1).cuda(), 
+            torch.where(torch.sum(x == 5, dim=1) < torch.sum(x == 6, dim=1), torch.tensor(2).cuda(), torch.tensor(0).cuda()))
+        im_embed = self.object_embed(x)
+        x = self.image_procs(im_embed)
+
+        if self.use_memory:
+            hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
+            hidden = self.memory_rnn(x, hidden)
+            embedding = hidden[0]
+            memory = torch.cat(hidden, dim=1)
+        else:
+            embedding = x
+
+        if self.use_text:
+            embed_text = self._get_embed_text(obs.text)
+            embedding = torch.cat((embedding, embed_text), dim=1)
+
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        x = self.critic(embedding)
+        value = x.squeeze(1)
+        return dist, value, memory
+
+    def _get_embed_text(self, text):
+        _, hidden = self.text_rnn(self.word_embedding(text))
+        return hidden[-1]
+
+class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
+    def __init__(self, obs_space, action_space, use_memory=False, use_text=False, embed_size=16, image_embed_size=128, cheat=False):
         super().__init__()
 
         # Decide which components are enabled
@@ -74,16 +163,16 @@ class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
 
         # Define actor's model
         self.actor = nn.Sequential(
-            nn.Linear(self.embedding_size, 64),
+            nn.Linear(self.embedding_size, self.embedding_size),
             nn.Tanh(),
-            nn.Linear(64, action_space.n)
+            nn.Linear(self.embedding_size, action_space.n)
         )
 
         # Define critic's model
         self.critic = nn.Sequential(
-            nn.Linear(self.embedding_size, 64),
+            nn.Linear(self.embedding_size, self.embedding_size),
             nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Linear(self.embedding_size, 1)
         )
 
         # Initialize parameters correctly
