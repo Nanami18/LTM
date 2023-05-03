@@ -60,7 +60,18 @@ def get_txt_logger(model_dir):
         ]
     )
 
-    return logging.getLogger()
+    txt_logger = logging.getLogger()
+    txt_logger.setLevel(logging.INFO)
+
+    # formatter = logging.Formatter('%(message)s')
+    # file_handler = logging.FileHandler(filename=path)
+    # file_handler.setFormatter(formatter)
+    # txt_logger.addHandler(file_handler)
+    # stream_handler = logging.StreamHandler(sys.stdout)
+    # stream_handler.setFormatter(formatter)
+    # txt_logger.addHandler(stream_handler)
+
+    return txt_logger
 
 
 def get_csv_logger(model_dir):

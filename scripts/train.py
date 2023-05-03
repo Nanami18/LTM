@@ -45,7 +45,6 @@ if __name__ == "__main__":
     tb_writer = tensorboardX.SummaryWriter(model_dir)
 
     # Log command and all script arguments
-
     txt_logger.info("{}\n".format(" ".join(sys.argv)))
     txt_logger.info("{}\n".format(cfg))
 
@@ -116,7 +115,12 @@ if __name__ == "__main__":
         # Update model parameters
         update_start_time = time.time()
         exps, logs1 = algo.collect_experiences(bc_mode)
-        logs2 = algo.update_parameters(exps, bc_mode)
+        # Manual lr scheduling
+        # if (num_frames+1) % 20481 == 0:
+        #     print("lr down")
+        #     logs2 = algo.update_parameters(exps, bc_mode, lr_down=True)
+        # else:
+        logs2 = algo.update_parameters(exps, bc_mode, store_data=False, lr_down=False, cur_num_frames=num_frames)
         logs = {**logs1, **logs2}
         update_end_time = time.time()
 

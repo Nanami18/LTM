@@ -12,11 +12,11 @@ class Agent:
     - to choose an action given an observation,
     - to analyze the feedback (i.e. reward and done state) of its action."""
 
-    def __init__(self, obs_space, action_space, model_dir, cfg, num_envs=1):
+    def __init__(self, obs_space, action_space, model_dir, cfg):
         obs_space, self.preprocess_obss = utils.get_obss_preprocessor(obs_space)
         self.acmodel = build_model_lstm(cfg, obs_space, action_space)
         self.argmax = cfg.argmax
-        self.num_envs = num_envs
+        self.num_envs = cfg.procs
 
         if self.acmodel.recurrent:
             self.memories = torch.zeros(self.num_envs, self.acmodel.memory_size, device=device)
