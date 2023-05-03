@@ -86,11 +86,21 @@ class BaseAlgo(ABC):
             self.memories = torch.zeros(*shape, self.acmodel.memory_size, device=self.device)
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
-        self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
+        # self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
+        # self.actions = [[None] * (shape[1])] * (shape[0])
+        if self.cfg.use_ext_mem:
+            self.actions = torch.zeros((shape[0], shape[1], 2), device=self.device, dtype=torch.int)
+        else:
+            self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
         self.values = torch.zeros(*shape, device=self.device)
         self.rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
-        self.log_probs = torch.zeros(*shape, device=self.device)
+        # self.log_probs = torch.zeros(*shape, device=self.device)
+        if self.cfg.use_ext_mem:
+            self.log_probs = torch.zeros((shape[0], shape[1], 2), device=self.device)
+        else:
+            self.log_probs = torch.zeros(*shape, device=self.device)
+        # self.log_probs = [[None] * (shape[1])] * (shape[0])
 
         # Initialize log values
 
@@ -130,19 +140,30 @@ class BaseAlgo(ABC):
             preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
             with torch.no_grad():
                 if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                    if self.cfg.use_ext_mem:
+                        dist, value, memory_w_dist = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                    else:
+                        dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
                 else:
-                    dist, value = self.acmodel(preprocessed_obs)
+                    if self.cfg.use_ext_mem:
+                        dist, value, memory_w_dist = self.acmodel(preprocessed_obs, None)
+                    else:
+                        dist, value = self.acmodel(preprocessed_obs)
             action = dist.sample()
+            if self.cfg.use_ext_mem:
+                memory_w = memory_w_dist.sample()
+                action = torch.stack([action, memory_w]).transpose(0, 1)
             gt_action = torch.tensor(self.env.compute_expert_action(), device=self.device, dtype=torch.int)
             if bc_mode and self.cfg.teacher_forcing:
                 obs, reward, terminated, truncated, _ = self.env.step(gt_action.cpu().numpy())
             else:
-                obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+                if self.cfg.use_ext_mem:
+                    obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
+                else:
+                    obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
             done = tuple(a | b for a, b in zip(terminated, truncated))
 
             # Update experiences values
-
             self.obss[i] = self.obs
             self.obs = obs
             if self.acmodel.recurrent:
@@ -162,7 +183,10 @@ class BaseAlgo(ABC):
                 ], device=self.device)
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
-            self.log_probs[i] = dist.log_prob(action)
+            if self.cfg.use_ext_mem:
+                self.log_probs[i] = torch.stack([dist.log_prob(action[:, 0]), memory_w_dist.log_prob(action[:, 1])]).transpose(0, 1)
+            else:
+                self.log_probs[i] = dist.log_prob(action)
 
             # Update log values
 
@@ -188,7 +212,10 @@ class BaseAlgo(ABC):
             if self.acmodel.recurrent:
                 _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
             else:
-                _, next_value = self.acmodel(preprocessed_obs)
+                if self.cfg.use_ext_mem:
+                    _, next_value, _ = self.acmodel(preprocessed_obs, None)
+                else:
+                    _, next_value = self.acmodel(preprocessed_obs)
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
