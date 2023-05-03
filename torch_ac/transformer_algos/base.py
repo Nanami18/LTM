@@ -145,7 +145,6 @@ class BaseAlgo(ABC):
                     else:
                         dist, value = self.acmodel(preprocessed_obs)
                 action = dist.sample()
-
                 obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
                 done = tuple(a | b for a, b in zip(terminated, truncated))
             else:
@@ -153,8 +152,12 @@ class BaseAlgo(ABC):
                 with torch.no_grad():
                     dist, value, memory = self.acmodel(preprocessed_obs, self.memory, self.act_ind)
                 action = dist.sample()
-                obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
-                gt_action = self.env.compute_expert_action()
+                gt_action = torch.tensor(self.env.compute_expert_action(), device=self.device, dtype=torch.int)
+
+                if bc_mode and self.cfg.teacher_forcing:
+                    obs, reward, terminated, truncated, _ = self.env.step(gt_action.cpu().numpy())
+                else:
+                    obs, reward, terminated, truncated, _ = self.env.step(action.cpu().numpy())
                 done = tuple(a | b for a, b in zip(terminated, truncated))
             # Update experiences values
             self.obs = obs
@@ -173,7 +176,7 @@ class BaseAlgo(ABC):
             self.act_ind = (self.act_ind * self.mask).long()
             self.act_ind[self.act_ind > self.recurrence-1] = self.recurrence-1
             if bc_mode:
-                self.actions[i] = torch.tensor(gt_action, device=self.device, dtype=torch.int)
+                self.actions[i] = gt_action
             else:
                 self.actions[i] = action
             self.values[i] = value
