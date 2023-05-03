@@ -47,6 +47,7 @@ __C.use_ext_mem = False
 __C.token_embed_size = 16
 __C.image_embed_size = 128
 __C.use_text = False
+__C.init_var = False
 
 # LSTM
 __C.use_embed = True

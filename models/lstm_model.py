@@ -15,38 +15,37 @@ from minigrid.core.constants import (
 def build_model(cfg, obs_space, action_space):
     if cfg.use_embed:
         if cfg.use_linear_procs:
-            model = ACModelWithLinearProcs(obs_space, action_space,
-                cfg.use_memory, cfg.use_text, cfg.token_embed_size, cfg.image_embed_size)
+            model = ACModelWithLinearProcs(obs_space, action_space, cfg)
         else:
-            model = ACModelWithEmbed(obs_space, action_space,
-                cfg.use_memory, cfg.use_text, cfg.token_embed_size, cfg.image_embed_size, cheat=cfg.cheat)
+             model = ACModelWithEmbed(obs_space, action_space,cfg)
     else:
-        model = ACModel(obs_space, action_space,
-            cfg.use_memory, cfg.use_text)
+        model = ACModel(obs_space, action_space, cfg)
     
     return model
 
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
-def init_params(m):
+def init_params(m, cfg):
     classname = m.__class__.__name__
     if (classname.find("Linear") != -1 and classname.find("ACModel") == -1) or classname.find("Embedding") != -1 :
         m.weight.data.normal_(0, 1)
-        # m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
+        if cfg.init_var:
+            m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
         if classname != "Embedding" and m.bias is not None:
             m.bias.data.fill_(0)
 
 class ACModelWithLinearProcs(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False, embed_size=16, image_embed_size=128):
+    def __init__(self, obs_space, action_space, cfg):
         super().__init__()
 
         # Decide which components are enabled
-        self.use_text = use_text
-        self.use_memory = use_memory
+        self.use_text = cfg.use_text
+        self.use_memory = cfg.use_memory
        
-        self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), embed_size)
-        self.image_procs = nn.Sequential(nn.Linear(embed_size, image_embed_size), nn.ReLU(), nn.Linear(image_embed_size, image_embed_size))
+        self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), cfg.token_embed_size)
+        self.image_procs = nn.Sequential(nn.Linear(cfg.token_embed_size, cfg.image_embed_size), nn.ReLU(), 
+                nn.Linear(cfg.image_embed_size, cfg.image_embed_size))
 
-        self.image_embedding_size = image_embed_size
+        self.image_embedding_size = cfg.image_embed_size
 
         # Define memory
         if self.use_memory:
@@ -79,7 +78,7 @@ class ACModelWithLinearProcs(nn.Module, torch_ac.RecurrentACModel):
         )
 
         # Initialize parameters correctly
-        self.apply(init_params)
+        self.apply(init_params, cfg)
 
     @property
     def memory_size(self):
@@ -121,29 +120,29 @@ class ACModelWithLinearProcs(nn.Module, torch_ac.RecurrentACModel):
         return hidden[-1]
 
 class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False, embed_size=16, image_embed_size=128, cheat=False):
+    def __init__(self, obs_space, action_space, cfg):
         super().__init__()
 
         # Decide which components are enabled
-        self.use_text = use_text
-        self.use_memory = use_memory
+        self.use_text = cfg.use_text
+        self.use_memory = cfg.use_memory
        
         # Define image embedding
-        self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), embed_size)
-        self.color_embed = nn.Embedding(len(COLOR_TO_IDX), embed_size)
-        self.state_embed = nn.Embedding(2, embed_size)
+        self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), cfg.token_embed_size)
+        self.color_embed = nn.Embedding(len(COLOR_TO_IDX), cfg.token_embed_size)
+        self.state_embed = nn.Embedding(2, cfg.token_embed_size)
 
         self.image_conv = nn.Sequential(
-            nn.Conv2d(embed_size*3, image_embed_size//2, (2, 2)),
+            nn.Conv2d(cfg.token_embed_size*3, cfg.image_embed_size//2, (2, 2)),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),
-            nn.Conv2d(image_embed_size//2, image_embed_size//2, (2, 2)),
+            nn.Conv2d(cfg.image_embed_size//2, cfg.image_embed_size//2, (2, 2)),
             nn.ReLU(),
-            nn.Conv2d(image_embed_size//2, image_embed_size, (2, 2)),
+            nn.Conv2d(cfg.image_embed_size//2, cfg.image_embed_size, (2, 2)),
             nn.ReLU()
         )
 
-        self.image_embedding_size = image_embed_size
+        self.image_embedding_size = cfg.image_embed_size
 
         # Define memory
         if self.use_memory:
@@ -176,7 +175,7 @@ class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
         )
 
         # Initialize parameters correctly
-        self.apply(init_params)
+        init_params(self, cfg)
 
     @property
     def memory_size(self):
@@ -220,12 +219,12 @@ class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
         return hidden[-1]
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False, image_embed_size=128):
+    def __init__(self, obs_space, action_space, cfg):
         super().__init__()
 
         # Decide which components are enabled
-        self.use_text = use_text
-        self.use_memory = use_memory
+        self.use_text = cfg.use_text
+        self.use_memory = cfg.use_memory
 
         # Define image embedding
         self.image_conv = nn.Sequential(
@@ -272,7 +271,7 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         )
 
         # Initialize parameters correctly
-        self.apply(init_params)
+        self.apply(init_params, cfg)
 
     @property
     def memory_size(self):
