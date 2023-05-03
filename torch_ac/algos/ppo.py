@@ -4,6 +4,8 @@ import torch.nn.functional as F
 
 from torch_ac.algos.base import BaseAlgo
 
+import os
+
 class PPOAlgo(BaseAlgo):
     """The Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
@@ -19,12 +21,15 @@ class PPOAlgo(BaseAlgo):
 
         assert self.batch_size % self.recurrence == 0
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), cfg.lr, eps=cfg.optim_eps)
+        self.optimizer = torch.optim.AdamW(self.acmodel.parameters(), cfg.lr, eps=cfg.optim_eps)
         self.batch_num = 0
 
-    def update_parameters(self, exps, bc_mode):
+    def update_parameters(self, exps, bc_mode, store_data=False, lr_down=False, cur_num_frames=0):
         # Collect experiences
-
+        if lr_down:
+            for g in self.optimizer.param_groups:
+                g['lr'] = g['lr']*0.1
+        # arr_list = []
         for _ in range(self.epochs):
             # Initialize log values
 
@@ -48,33 +53,65 @@ class PPOAlgo(BaseAlgo):
                 if self.acmodel.recurrent:
                     memory = exps.memory[inds]
 
+                cur_exp = []
                 for i in range(self.recurrence):
                     # Create a sub-batch of experience
 
                     sb = exps[inds + i]
 
                     # Compute loss
+                    cur_exp.append([sb.obs.image[0, :, :, 0], sb.action[0]])
 
                     if self.acmodel.recurrent:
-                        dist, value, memory = self.acmodel(sb.obs, memory * sb.mask)
+                        if self.cfg.use_ext_mem:
+                            dist, value, memory_w_dist = self.acmodel(sb.obs, memory * sb.mask)
+                        else:
+                            dist, value, memory = self.acmodel(sb.obs, memory * sb.mask)
                     else:
-                        dist, value = self.acmodel(sb.obs)
+                        if self.cfg.use_ext_mem:
+                            dist, value, memory_w_dist = self.acmodel(sb.obs, None)
+                        else:
+                            dist, value = self.acmodel(sb.obs)
 
                     entropy = dist.entropy().mean()
 
                     if not bc_mode:
-                        ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
-                        surr1 = ratio * sb.advantage
-                        surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
-                        policy_loss = -torch.min(surr1, surr2).mean()
+                        if self.cfg.use_ext_mem:
+                            sb.action = sb.action.reshape(-1, 2)
+                            sb.log_prob = sb.log_prob.reshape(-1, 2)
+                            breakpoint()
+                            ratio = torch.exp(dist.log_prob(sb.action[:, 0]) - sb.log_prob[:, 0])
+                            surr1 = ratio * sb.advantage
+                            surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
+                            policy_loss_act = -torch.min(surr1, surr2).mean()
+                            ratio = torch.exp(memory_w_dist.log_prob(sb.action[:, 1]) - sb.log_prob[:, 1])
+                            surr1 = ratio * sb.advantage
+                            surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
+                            policy_loss_memw = -torch.min(surr1, surr2).mean()
+                            policy_loss = (policy_loss_act + policy_loss_memw)/2
+                        else:
+                            ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
+                            surr1 = ratio * sb.advantage
+                            surr2 = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
+                            policy_loss = -torch.min(surr1, surr2).mean()
                     else:
                         policy_loss = -dist.log_prob(sb.action).mean()
+                        # print(sb.action)
+                        # if not torch.all(sb.action == 2):
+                        #     # policy_loss += dist.entropy().mean()
+                        #     print("probability going left (top): ", dist.log_prob(torch.full((sb.obs.image.shape[0],), 0).cuda()).mean())
+                        #     print("probability going right (bottom): ", dist.log_prob(torch.full((sb.obs.image.shape[0],), 1).cuda()).mean())
+                        #     print("probability of correct action: ", dist.log_prob(sb.action).mean())
+                        #     if dist.log_prob(sb.action).mean() > -0.05 and not os.path.isfile("current_run_working.txt"):
+                        #         with open("current_run_working.txt", 'w') as f:
+                        #             f.write(str(cur_num_frames))
+                        #             f.write("\n")
+                        #             f.write(str(dist.log_prob(sb.action).mean()))
 
                     value_clipped = sb.value + torch.clamp(value - sb.value, -self.clip_eps, self.clip_eps)
                     surr1 = (value - sb.returnn).pow(2)
                     surr2 = (value_clipped - sb.returnn).pow(2)
                     value_loss = torch.max(surr1, surr2).mean()
-
                     loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
 
                     # Update batch values
@@ -90,6 +127,7 @@ class PPOAlgo(BaseAlgo):
                     if self.acmodel.recurrent and i < self.recurrence - 1:
                         exps.memory[inds + i + 1] = memory.detach()
 
+                # arr_list.append(cur_exp)
                 # Update batch values
 
                 batch_entropy /= self.recurrence
@@ -123,6 +161,18 @@ class PPOAlgo(BaseAlgo):
             "value_loss": numpy.mean(log_value_losses),
             "grad_norm": numpy.mean(log_grad_norms)
         }
+        
+        # if store_data:
+        #     with open("obs_list_S9linear.txt", 'a') as f:
+        #         for exp in arr_list:
+        #             for tup in exp:
+        #                 obs, gt = tup[0], tup[1]
+        #                 f.write("Observation:\n")
+        #                 numpy.savetxt(f, obs.cpu().detach().numpy(), fmt='%d', delimiter='\t')
+        #                 f.write("\nGt action: ")
+        #                 f.write(str(int(gt)))
+        #                 f.write("\n\n")
+        #             f.write("-----one recurrent exp end-------\n\n")
 
         return logs
 

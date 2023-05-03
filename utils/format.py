@@ -26,10 +26,17 @@ def get_obss_preprocessor(obs_space):
         vocab = Vocabulary(obs_space["text"])
 
         def preprocess_obss(obss, device=None):
-            return torch_ac.DictList({
-                "image": preprocess_images([obs["image"] for obs in obss], device=device),
-                "text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device)
-            })
+            if 'memory' in obss[0].keys():
+                return torch_ac.DictList({
+                    "image": preprocess_images([obs["image"] for obs in obss], device=device),
+                    "text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device),
+                    "memory": torch.stack([torch.tensor(obs['memory'], device=device) for obs in obss])
+                })
+            else:
+                return torch_ac.DictList({
+                    "image": preprocess_images([obs["image"] for obs in obss], device=device),
+                    "text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device),
+                })
 
         preprocess_obss.vocab = vocab
 
@@ -38,6 +45,34 @@ def get_obss_preprocessor(obs_space):
 
     return obs_space, preprocess_obss
 
+def get_sequence_obss_preprocessor(obs_space):
+    # Check if obs_space is an image space
+    if isinstance(obs_space, gym.spaces.Box):
+        obs_space = {"image": obs_space.shape}
+
+        def preprocess_obss(obss, device=None):
+            return torch_ac.DictList({
+                "image": preprocess_images(obss, device=device)
+            })
+
+    # Check if it is a MiniGrid observation space
+    elif isinstance(obs_space, gym.spaces.Dict) and "image" in obs_space.spaces.keys():
+        obs_space = {"image": obs_space.spaces["image"].shape, "text": 100}
+
+        vocab = Vocabulary(obs_space["text"])
+
+        def preprocess_obss(obss, device=None):
+            return torch_ac.DictList({
+                "image": torch.stack([preprocess_images([o['image'] for o in obs], device=device) for obs in obss]),
+                "text": torch.stack([preprocess_texts([o['mission'] for o in obs], vocab=vocab, device=device) for obs in obss])
+            })
+
+        preprocess_obss.vocab = vocab
+
+    else:
+        raise ValueError("Unknown observation space: " + str(obs_space))
+
+    return obs_space, preprocess_obss
 
 def preprocess_images(images, device=None):
     # Bug of Pytorch: very slow if not first converted to numpy array
