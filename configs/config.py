@@ -36,16 +36,20 @@ __C.optim_alpha = 0.99
 __C.clip_eps = 0.2
 __C.recurrence = 8
 __C.text = False
+__C.teacher_forcing = True
 
 # Model
+__C.use_memory = True
+__C.cheat = False
 __C.use_lstm = False
+__C.use_linear_procs = False
+__C.use_ext_mem = False
 __C.token_embed_size = 16
 __C.image_embed_size = 128
 __C.use_text = False
 
 # LSTM
 __C.use_embed = True
-__C.use_memory = True
 
 # Transfomrer
 __C.num_decoder_layers = 1
@@ -58,6 +62,7 @@ __C.argmax = False
 __C.pause = 0.1
 __C.gif = False
 __C.episodes = 1000000
+__C.worst_episodes_to_show = 10
 
 
 def get_exp_dir(cfg_name):
