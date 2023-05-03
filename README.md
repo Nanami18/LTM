@@ -1,6 +1,6 @@
-# RL Starter Files
+# Overview
 
-RL starter files in order to immediatly train, visualize and evaluate an agent **without writing any line of code**.
+This repo is based on [RL Starter Files](https://github.com/lcswillems/rl-starter-files) and [torch-ac](https://github.com/lcswillems/torch-ac)
 
 <p align="center">
     <img width="300" src="README-rsrc/visualize-keycorridor.gif">
@@ -26,18 +26,12 @@ These files are suited for [`gym-minigrid`](https://github.com/maximecb/gym-mini
 
 1. Clone this repository.
 
-2. Install `gym-minigrid` environments and `torch-ac` RL algorithms:
+2. Install `gym-minigrid` environments and other necessary dependency
 
 ```
 pip3 install -r requirements.txt
 ```
 
-**Note:** If you want to modify `torch-ac` algorithms, you will need to rather install a cloned version, i.e.:
-```
-git clone https://github.com/lcswillems/torch-ac.git
-cd torch-ac
-pip3 install -e .
-```
 
 ## Example of use
 

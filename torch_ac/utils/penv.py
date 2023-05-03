@@ -15,6 +15,9 @@ def worker(conn, env):
         elif cmd == "reset":
             obs, _ = env.reset()
             conn.send(obs)
+        elif cmd == "compute_expert_action":
+            action = env.compute_expert_action()
+            conn.send(action)
         else:
             raise NotImplementedError
 
@@ -50,6 +53,22 @@ class ParallelEnv(gym.Env):
         if terminated or truncated:
             obs, _ = self.envs[0].reset()
         results = zip(*[(obs, reward, terminated, truncated, info)] + [local.recv() for local in self.locals])
+        return results
+    
+    # For action space with multiple actions
+    def step_tup(self, actions):
+        for local, action in zip(self.locals, actions[1:]):
+            local.send(("step", action))
+        obs, reward, terminated, truncated, info = self.envs[0].step(actions[0])
+        if terminated or truncated:
+            obs, _ = self.envs[0].reset()
+        results = zip(*[(obs, reward, terminated, truncated, info)] + [local.recv() for local in self.locals])
+        return results
+    
+    def compute_expert_action(self):
+        for local in self.locals:
+            local.send(("compute_expert_action", None))
+        results = [self.envs[0].compute_expert_action()] + [local.recv() for local in self.locals]
         return results
 
     def render(self):
