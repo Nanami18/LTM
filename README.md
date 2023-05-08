@@ -42,7 +42,7 @@ python3 -m scripts.train/evaluate/visualize --config path_to_config --custom_pat
 
 You can also manually inspect the environment through GUI with
 ```
-python manual_control.py --env env_name
+python manual_control.py --env MiniGrid_MemoryS13_v0_seeobj
 ```
 
 ## Example of use
