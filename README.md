@@ -33,6 +33,18 @@ pip3 install -r requirements.txt
 ```
 
 
+## Usage
+In this repo, train/test are all done through config files.
+
+```
+python3 -m scripts.train/evaluate/visualize --config path_to_config --custom_path if_custom_checkpoint_path
+```
+
+You can also manually inspect the environment through GUI with
+```
+python manual_control.py --env env_name
+```
+
 ## Example of use
 
 Train, visualize and evaluate an agent on the `MiniGrid-DoorKey-5x5-v0` environment:
