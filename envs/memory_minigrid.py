@@ -168,7 +168,7 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
         else:
             self.success_pos = (pos1[0], pos1[1] - 1)
             self.failure_pos = (pos0[0], pos0[1] + 1)
-        
+                
         # self.place_agent(top=(2,4), size=(1,1))
 
         self.mission = 'go to the matching object at the end of the hallway'
@@ -335,6 +335,7 @@ class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
         self.mission = 'go to the matching object at the end of the hallway'
 
     def compute_expert_action(self):
+        print("Running compute_expert_action")
         tx, ty = self.success_pos
         goal_positions = set([(tx, ty)])
         

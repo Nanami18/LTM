@@ -8,8 +8,7 @@ from minigrid.minigrid_env import MiniGridEnv
 from minigrid.utils.window import Window
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 
-from envs.memory_minigrid import register_envs
-register_envs()
+import envs
 
 
 class ManualControl:
@@ -38,6 +37,11 @@ class ManualControl:
         _, reward, terminated, truncated, _ = self.env.step(action)
         print(f"step={self.env.step_count}, reward={reward:.2f}")
 
+        # this line only works findingobj_minigrid_new environment
+        # print("total reward = ", self.env.total_reward)
+
+        self.window.set_caption(self.env.mission)
+
         if terminated:
             print("terminated!")
             self.reset(self.seed)
@@ -53,6 +57,7 @@ class ManualControl:
 
     def reset(self, seed=None):
         self.env.reset(seed=seed)
+
 
         if hasattr(self.env, "mission"):
             print("Mission: %s" % self.env.mission)
@@ -75,7 +80,7 @@ class ManualControl:
             "left": MiniGridEnv.Actions.left,
             "right": MiniGridEnv.Actions.right,
             "up": MiniGridEnv.Actions.forward,
-            " ": MiniGridEnv.Actions.toggle,
+            "down": MiniGridEnv.Actions.toggle,
             "pageup": MiniGridEnv.Actions.pickup,
             "pagedown": MiniGridEnv.Actions.drop,
             "enter": MiniGridEnv.Actions.done,
@@ -117,4 +122,4 @@ if __name__ == "__main__":
         env = ImgObsWrapper(env)
 
     manual_control = ManualControl(env, agent_view=args.agent_view, seed=args.seed)
-    manual_control.start()
+    manual_control.start() 
