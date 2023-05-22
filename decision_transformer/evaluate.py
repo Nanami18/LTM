@@ -86,6 +86,8 @@ if __name__ == "__main__":
                 obs, reward, terminated, truncated, _ = env.step(action[:, -1].item())
                 cur_episode_return += reward
                 counter += 1
+                if counter >= cfg.max_timestep:
+                    truncated = True
                 
                 # Concatenate the new state, action, reward, and timestep
                 if states.shape[1] >= cfg.context_length:
@@ -94,7 +96,7 @@ if __name__ == "__main__":
                     actions = actions[:,1:]
                     timesteps = timesteps[:,1:]
                 states = torch.cat((states, torch.tensor(obs['image']).unsqueeze(0).unsqueeze(0).to(device)), dim=1)
-                rewards = torch.cat((rewards, torch.tensor(reward, device=device).unsqueeze(0).unsqueeze(0).unsqueeze(0)), dim=1)
+                rewards = torch.cat((rewards, rewards[:,-1]-torch.tensor(reward, device=device).unsqueeze(0).unsqueeze(0).unsqueeze(0)), dim=1)
                 # if actions is not None:
                 #     actions = torch.cat((actions, action[:, -1]), dim=1)
                 # else:
