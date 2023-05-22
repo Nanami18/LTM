@@ -57,6 +57,22 @@ __C.num_decoder_layers = 1
 __C.n_head = 4
 __C.use_pastkv = False
 
+# Decision Transformer
+__C.context_length = 20
+__C.discrete_action = True
+__C.action_dim = 1
+__C.hidden_dim = 64
+__C.n_blocks = 4
+__C.n_heads = 8
+__C.drop_p = 0.1
+__C.max_timestep = 100
+__C.eval_reward = 1.0
+
+# Offline Training
+__C.num_episodes = 1000
+__C.num_workers = 8
+__C.reward_pertubation = 0.0
+
 # Inference
 __C.shift = 0
 __C.argmax = False
