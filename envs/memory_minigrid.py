@@ -1,3 +1,5 @@
+import random
+
 import gymnasium as gym
 from minigrid.minigrid_env import (
     MiniGridEnv,
@@ -227,8 +229,9 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
                     open_set.append((forward_pose, forward_path))
         
         return path[0]
-
-
+    
+    def compute_random_action(self):
+        return random.randint(0, 2)
 
 # Make the target object location deterministic
 class MiniGrid_MemoryS13_v0_hallwayobj(MemoryEnv):
