@@ -1,0 +1,36 @@
+# Env
+  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+# Training
+  seed: 1
+  log_interval: 1
+  save_interval: 10
+  frames: 10000
+  lr: 0.001
+  gae_lambda: 0.95
+  batch_size: 16
+  discount: 0.99
+  max_grad_norm: 0.5
+  optim_eps: 0.00000001
+  optim_alpha: 0.99
+  clip_eps: 0.2
+  text: False
+  reward_pertubation: 0.001
+# Model
+  context_length: 10
+  discrete_action: True
+  action_dim: 1
+  image_embed_size: 128
+  num_decoder_layers: 1
+  n_head: 4
+  hidden_dim: 64
+  token_embed_size: 32
+  init_var: True
+  n_blocks: 2
+  n_heads: 4
+  eval_reward: 0.9822222222222222
+# Inference
+  shift: 0
+  argmax: False
+  pause: 0.1
+  gif: False
+  episodes: 500
