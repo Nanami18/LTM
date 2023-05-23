@@ -134,7 +134,8 @@ class BaseAlgo(ABC):
                 else:
                     dist, value = self.acmodel(preprocessed_obs)
             action = dist.sample()
-            gt_action = torch.tensor(self.env.compute_expert_action(), device=self.device, dtype=torch.int)
+            if bc_mode:
+                gt_action = torch.tensor(self.env.compute_expert_action(), device=self.device, dtype=torch.int)
             if bc_mode and self.cfg.teacher_forcing:
                 obs, reward, terminated, truncated, _ = self.env.step(gt_action.cpu().numpy())
             else:
