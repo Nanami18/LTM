@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     # Train model
     model.train()
-    trained_frames = 0
+    trained_frames = status["num_frames"]
     epoch_count = 0
     start_time = time.time()
 
