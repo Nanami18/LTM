@@ -30,6 +30,16 @@ def register_envs():
         entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateS13",
         kwargs={"size":13, "agent_view_size":3}
     )
+    gym.register(
+        id="MiniGrid-ObjLocateS13-view5",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateS13",
+        kwargs={"size":13, "agent_view_size":5}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocateS13-view7",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateS13",
+        kwargs={"size":13, "agent_view_size":7}
+    )
 
 # An environment where the agent has to find a ball given the instruction that specify the color
 class MiniGrid_ObjLocateS13(MiniGridEnv):
@@ -65,6 +75,7 @@ class MiniGrid_ObjLocateS13(MiniGridEnv):
         for color in self.colors:
             ball = Ball(color)
             ball.can_overlap = lambda : True
+            ball.can_pickup = lambda : False
             self.place_obj(ball)
             self.obj_loc[color] = ball.cur_pos
 
