@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch
 from torch.utils.data import Dataset, DataLoader
 
+from minigrid.core.actions import Actions
+
 # Generate a dataset of expert demonstrations, stored as an tuple of (s,a,r) arrays
 def generate_expert_trajectories(env, episodes, reward_pertubation=0.0):
     
@@ -76,7 +78,8 @@ class HallwayMemoryEnvDataset(Dataset):
     
     def __getitem__(self, idx):
         cur_traj = self.trajectories[idx]
-        start = np.random.randint(0, len(cur_traj[0])-1)
+        start = 0
+        # start = np.random.randint(0, len(cur_traj[0])-1)
         end = min(start + self.context_length, len(cur_traj[0]))
         states = [obs['image'] for obs in cur_traj[0][start:end]]
         actions = cur_traj[1][start:end]
@@ -103,6 +106,8 @@ class HallwayMemoryEnvDataset(Dataset):
 
         # mask == 1 `states` is valid, mask == 0 `states` is invalid (padding)
         mask = np.concatenate((np.zeros(self.context_length - (end-start)), np.ones(end-start)), axis=0)
+        mask = np.repeat(mask, 3)
+        # Change the mask to causal
 
         # Convert to torch tensors
         states = torch.from_numpy(states).float()

@@ -104,16 +104,20 @@ if __name__ == "__main__":
             states, actions, rewards, timesteps, masks = batch
             states = states.to(device)
             actions = actions.to(device)
+            gt_actions = actions.detach().clone()
             rewards = rewards.to(device)
             timesteps = timesteps.to(device)
             masks = masks.to(device)
-
             # breakpoint()
-            action_logits = model(rewards, states, actions, timesteps)
-            
+
+            action_logits = model(rewards, states, actions, timesteps, masks)
             # Compute loss and update the model
             if cfg.discrete_action:
-                loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), actions.squeeze(2))
+                # Ignore padding when calculating the loss
+                gt_actions = torch.where(masks[:,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
+                # Downweight forward actions
+                weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
+                loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
             else:
                 loss = torch.nn.functional.mse_loss(action_logits, actions)
 
