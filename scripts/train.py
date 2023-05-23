@@ -36,6 +36,8 @@ if __name__ == "__main__":
     else:
         model_name = str(args.config).split("/")[-1][:-5] or default_model_name
     model_dir = utils.get_model_dir(model_name)
+    if "ObjLocate" in cfg.env_name:
+        model_dir = "find_storage/" + "/".join(model_dir.split("/")[1:])
     # Load loggers and Tensorboard writer
 
     txt_logger = utils.get_txt_logger(model_dir)
