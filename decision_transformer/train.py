@@ -95,7 +95,7 @@ if __name__ == "__main__":
     # Train model
     model.train()
     trained_frames = status["num_frames"]
-    epoch_count = 0
+    epoch_count = status['update']
     start_time = time.time()
 
     while trained_frames < cfg.frames:
