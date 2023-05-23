@@ -10,9 +10,7 @@ from utils import device
 import models
 from configs.config import cfg, cfg_from_file
 
-from envs.memory_minigrid import register_envs
-register_envs()
-
+import envs
 
 # Parse arguments
 
@@ -120,7 +118,7 @@ if __name__ == "__main__":
         #     print("lr down")
         #     logs2 = algo.update_parameters(exps, bc_mode, lr_down=True)
         # else:
-        logs2 = algo.update_parameters(exps, bc_mode, store_data=False, lr_down=False, cur_num_frames=num_frames)
+        logs2 = algo.update_parameters(exps, bc_mode)
         logs = {**logs1, **logs2}
         update_end_time = time.time()
 
