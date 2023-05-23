@@ -78,6 +78,18 @@ def register_envs():
         entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_v0_hallwayobj",
         kwargs={"size":9, "almost_hallway":True}
     )
+    gym.register(
+        id="MiniGrid-MemoryS13-v0-almosthallwayobj",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_v0_hallwayobj",
+        kwargs={"size":13, "almost_hallway":True}
+    )
+    gym.register(
+        id="MiniGrid-MemoryS19-v0-almosthallwayobj",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_v0_hallwayobj",
+        kwargs={"size":19, "almost_hallway":True}
+    )
+
+
 
 class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
     """
