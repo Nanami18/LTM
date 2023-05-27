@@ -44,6 +44,8 @@ if __name__ == "__main__":
     else:
         model_name = str(args.config).split("/")[-1][:-5]
     model_dir = utils.get_model_dir(model_name)
+    if "ObjLocate" in cfg.env_name:
+        model_dir = "find_storage/" + "/".join(model_dir.split("/")[1:])
 
     model = build_model(cfg, env.observation_space, env.action_space)
     model.to(device)
