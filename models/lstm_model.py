@@ -232,10 +232,9 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
         # Define image embedding
         self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), cfg.token_embed_size)
         self.color_embed = nn.Embedding(len(COLOR_TO_IDX), cfg.token_embed_size)
-        self.state_embed = nn.Embedding(2, cfg.token_embed_size)
 
         self.image_conv = nn.Sequential(
-            nn.Conv2d(cfg.token_embed_size*3, cfg.image_embed_size//2, (2, 2)),
+            nn.Conv2d(cfg.token_embed_size*2, cfg.image_embed_size//2, (2, 2)),
             nn.ReLU(),
             nn.MaxPool2d((2, 2)),
             nn.Conv2d(cfg.image_embed_size//2, cfg.image_embed_size//2, (2, 2)),
@@ -295,9 +294,8 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
 
         object_embedding = self.object_embed(x[:, :, :, 0].long())
         color_embedding = self.color_embed(x[:, :, :, 1].long())
-        state_embedding = self.state_embed(x[:, :, :, 2].long())
 
-        im_embed = torch.cat((color_embedding, object_embedding, state_embedding), dim=3)
+        im_embed = torch.cat((color_embedding, object_embedding), dim=3)
         im_embed = im_embed.transpose(1,3).transpose(2,3)
         x = self.image_conv(im_embed)
         x = x.reshape(x.shape[0], -1)
