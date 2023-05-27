@@ -1,4 +1,6 @@
 import gymnasium as gym
+from gymnasium import spaces
+
 import numpy as np
 import random
 from minigrid.minigrid_env import (
@@ -58,6 +60,8 @@ class MiniGrid_ObjLocateS13(MiniGridEnv):
             see_through_walls=False,
             **kwargs
         )
+
+        self.observation_space['target_color'] = spaces.Discrete(len(self.colors))
     
     @staticmethod
     def _gen_mission(color):
@@ -84,6 +88,7 @@ class MiniGrid_ObjLocateS13(MiniGridEnv):
 
         # Set the target ball as specified in the mission text
         target_color = self.np_random.choice(self.colors)
+        self.target_color = target_color
         self.target_pos = self.obj_loc[target_color]
         self.mission = f'locate the {target_color} ball'
 
@@ -99,10 +104,17 @@ class MiniGrid_ObjLocateS13(MiniGridEnv):
                 reward = 1
                 while self.target_pos == (tx, ty):
                     target_color = self.np_random.choice(self.colors)
+                    self.target_color = target_color
                     self.target_pos = self.obj_loc[target_color]
                     self.mission = f'locate the {target_color} ball'
 
+        obs['target_color'] = COLOR_TO_IDX[self.target_color]
         return obs, reward, terminated, truncated, info
+    
+    def reset(self, seed=None, options=None,):
+        obs, info = super().reset(seed=seed, options=options)
+        obs['target_color'] = COLOR_TO_IDX[self.target_color]
+        return obs, info
 
     def maze_gen(self, width, height):
         self.grid.horz_wall(2, 2, 6)
