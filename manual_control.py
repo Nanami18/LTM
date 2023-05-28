@@ -34,7 +34,10 @@ class ManualControl:
         self.window.show(block=True)
 
     def step(self, action: MiniGridEnv.Actions):
+        # use expert action here to debug it
+        print("best action = ", self.env.compute_expert_action())
         _, reward, terminated, truncated, _ = self.env.step(action)
+        
         print(f"step={self.env.step_count}, reward={reward:.2f}")
 
         # this line only works findingobj_minigrid_new environment

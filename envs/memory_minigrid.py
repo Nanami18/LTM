@@ -181,6 +181,8 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
         agent_pose = self.agent_pos[0], self.agent_pos[1], self.agent_dir
         open_set = [(agent_pose, [])]
         closed_set = set()
+
+        
         while True:
             try:
                 pose, path = open_set.pop(0)
@@ -226,6 +228,10 @@ class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
                     forward_path.append(self.actions.forward)
                     open_set.append((forward_pose, forward_path))
         
+
+
+        
+
         return path[0]
 
 
