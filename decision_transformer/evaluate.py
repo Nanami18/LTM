@@ -43,9 +43,7 @@ if __name__ == "__main__":
         model_name = args.custom_dir
     else:
         model_name = str(args.config).split("/")[-1][:-5]
-    model_dir = utils.get_model_dir(model_name)
-    if "ObjLocate" in cfg.env_name:
-        model_dir = "find_storage/" + "/".join(model_dir.split("/")[1:])
+    model_dir = utils.get_model_dir(model_name, cfg.env_name)
 
     model = build_model(cfg, env.observation_space, env.action_space)
     model.to(device)
@@ -69,8 +67,7 @@ if __name__ == "__main__":
             truncated = False
             cur_episode_return = 0
             obs, _ = env.reset()
-            states = torch.tensor(obs['image']).unsqueeze(0) # time dimension
-            states = states.unsqueeze(0) # batch dimension
+            states = model.convert_obs_inf(obs)
             states = states.to(device)
             timesteps = torch.zeros((1,1), device=device).long()
             rewards = torch.tensor(cfg.eval_reward, device=device).float()
@@ -97,7 +94,7 @@ if __name__ == "__main__":
                     rewards = rewards[:,1:]
                     actions = actions[:,1:]
                     timesteps = timesteps[:,1:]
-                states = torch.cat((states, torch.tensor(obs['image']).unsqueeze(0).unsqueeze(0).to(device)), dim=1)
+                states = torch.cat((states, model.convert_obs_inf(obs).to(device)), dim=1)
                 rewards = torch.cat((rewards, rewards[:,-1]-torch.tensor(reward, device=device).unsqueeze(0).unsqueeze(0).unsqueeze(0)), dim=1)
                 # if actions is not None:
                 #     actions = torch.cat((actions, action[:, -1]), dim=1)

@@ -40,9 +40,7 @@ if __name__ == "__main__":
         model_name = args.custom_dir
     else:
         model_name = str(args.config).split("/")[-1][:-5] or default_model_name
-    model_dir = utils.get_model_dir(model_name)
-    if "ObjLocate" in cfg.env_name:
-        model_dir = "find_storage/" + "/".join(model_dir.split("/")[1:])
+    model_dir = utils.get_model_dir(model_name, cfg.env_name)
     # Load loggers and Tensorboard writer
 
     txt_logger = utils.get_txt_logger(model_dir)
@@ -89,7 +87,8 @@ if __name__ == "__main__":
     # Load expert dataset
     trajectories = generate_expert_trajectories(env, cfg.num_episodes, cfg.reward_pertubation)
     print("Estimated epochs: {}".format(cfg.frames/cfg.num_episodes))
-    train_ds = HallwayMemoryEnvDataset(trajectories, cfg.context_length, cfg.discount)
+    if "Memory" in cfg.env_name:
+        train_ds = HallwayMemoryEnvDataset(trajectories, cfg)
 
     # Build dataloader
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)

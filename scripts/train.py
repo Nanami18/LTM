@@ -35,11 +35,10 @@ if __name__ == "__main__":
         model_name = args.custom_dir
     else:
         model_name = str(args.config).split("/")[-1][:-5] or default_model_name
-    model_dir = utils.get_model_dir(model_name)
-    if "ObjLocate" in cfg.env_name:
-        model_dir = "find_storage/" + "/".join(model_dir.split("/")[1:])
-    # Load loggers and Tensorboard writer
+    model_dir = utils.get_model_dir(model_name, cfg.env_name)
 
+    # Load loggers and Tensorboard writer
+    
     txt_logger = utils.get_txt_logger(model_dir)
     csv_file, csv_logger = utils.get_csv_logger(model_dir)
     tb_writer = tensorboardX.SummaryWriter(model_dir)
@@ -72,7 +71,9 @@ if __name__ == "__main__":
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-    obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+    # obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+    obs_space = envs[0].observation_space
+    preprocess_obss = None
     if "vocab" in status:
         preprocess_obss.vocab.load_vocab(status["vocab"])
     txt_logger.info("Observations preprocessor loaded")
