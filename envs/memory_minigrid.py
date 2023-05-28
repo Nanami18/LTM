@@ -104,7 +104,21 @@ def register_envs():
         entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_scalarobs",
         kwargs={"size":19}
     )
-
+    gym.register(
+        id="MiniGrid-MemoryS25-scalarobs",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_scalarobs",
+        kwargs={"size":25}
+    )
+    gym.register(
+        id="MiniGrid-MemoryS31-scalarobs",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_scalarobs",
+        kwargs={"size":31}
+    )
+    gym.register(
+        id="MiniGrid-MemoryS37-scalarobs",
+        entry_point="envs.memory_minigrid:MiniGrid_MemoryS13_scalarobs",
+        kwargs={"size":37}
+    )
 
 
 class MiniGrid_MemoryS13_v0_seeobj(MemoryEnv):
