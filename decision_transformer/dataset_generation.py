@@ -57,12 +57,17 @@ def generate_random_trajectories(env, episodes):
 
 class HallwayMemoryEnvDataset(Dataset):
     # Trajectories is supposed to be list of episodes, each element is a tuple of (s,a,r) arrays
-    def __init__(self, trajectories, context_lenth, gamma):
+    def __init__(self, trajectories, cfg):
         self.trajectories = trajectories
         self.num_traj = len(trajectories)
-        self.context_length = context_lenth
-        self.gamma = gamma
-        self.image_obs_dim = trajectories[0][0][0]['image'].shape
+        self.context_length = cfg.context_length
+        self.gamma = cfg.discount
+        self.scalar_only = "scalarobs" in cfg.env_name
+        self.sampling_from_beginning = cfg.sampling_from_beginning
+        if not self.scalar_only:
+            self.image_obs_dim = trajectories[0][0][0]['image'].shape
+        else:
+            self.image_obs_dim = 1
         self.act_dim = 1
     
     def __len__(self):
@@ -78,10 +83,16 @@ class HallwayMemoryEnvDataset(Dataset):
     
     def __getitem__(self, idx):
         cur_traj = self.trajectories[idx]
-        start = 0
-        # start = np.random.randint(0, len(cur_traj[0])-1)
+        # Notes: This design choice is specific for hallway memory environment, as the first observation is necessary to make the correct decision
+        if self.sampling_from_beginning:
+            start = 0
+        else:
+            start = np.random.randint(0, len(cur_traj[0])-1)
         end = min(start + self.context_length, len(cur_traj[0]))
-        states = [obs['image'] for obs in cur_traj[0][start:end]]
+        if not self.scalar_only:
+            states = [obs['image'] for obs in cur_traj[0][start:end]]
+        else:
+            states = [obs for obs in cur_traj[0][start:end]]
         actions = cur_traj[1][start:end]
         rewards = cur_traj[2][start:end]
         rewards = self._discount_cumsum(rewards, self.gamma)
@@ -99,7 +110,10 @@ class HallwayMemoryEnvDataset(Dataset):
         # mask = np.concatenate((np.ones(end-start), np.zeros(self.context_length - (end-start))), axis=0)
 
         # Pad to left
-        states = np.concatenate([np.zeros((self.context_length - len(states), *self.image_obs_dim)), states], axis=0)
+        if not self.scalar_only:
+            states = np.concatenate([np.zeros((self.context_length - len(states), *self.image_obs_dim)), states], axis=0)
+        else:
+            states = np.concatenate([np.zeros((self.context_length - len(states))), states], axis=0)
         actions = np.concatenate([np.zeros((self.context_length - len(actions), self.act_dim)), actions], axis=0)
         rewards = np.concatenate([np.zeros((self.context_length - len(rewards), 1)), rewards], axis=0)
         timesteps = np.concatenate((np.zeros(self.context_length - (end-start)), np.arange(start, end)), axis=0)
@@ -127,10 +141,9 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, required=True)
-    parser.add_argument("--episodes", type=int, default=10, required=True)
-
+    parser.add_argument("--episodes", type=int, default=10)
     args = parser.parse_args()
-    
-    env = gym.make(args.env)
+
+    env = gym.make("MiniGrid-MemoryS9-scalarobs", render_mode=None)
     trajectories = generate_expert_trajectories(env, args.episodes)
-    data = HallwayMemoryEnvDataset(trajectories, 10, 0.99)
+    data = HallwayMemoryEnvDataset(trajectories, 10, 0.99, True)
