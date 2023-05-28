@@ -149,6 +149,7 @@ class PPOAlgo(BaseAlgo):
             indexes += self.recurrence // 2
         self.batch_num += 1
 
+        # Larger recurrence leads to batches with less diverse time steps
         num_indexes = self.batch_size // self.recurrence
         batches_starting_indexes = [indexes[i:i+num_indexes] for i in range(0, len(indexes), num_indexes)]
 
