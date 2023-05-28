@@ -14,14 +14,20 @@ def create_folders_if_necessary(path):
         os.makedirs(dirname)
 
 
-def get_storage_dir():
+def get_storage_dir(env_name):
     if "RL_STORAGE" in os.environ:
         return os.environ["RL_STORAGE"]
-    return "storage"
+    if "Memory" in env_name:
+        if "scalarobs" in env_name:
+            return "hallway_scalar_storage"
+        else:
+            return "storage"
+    elif "ObjLocate" in env_name:
+        return "find_storage"
 
 
-def get_model_dir(model_name):
-    return os.path.join(get_storage_dir(), model_name)
+def get_model_dir(model_name, env_name):
+    return os.path.join(get_storage_dir(env_name), model_name)
 
 
 def get_status_path(model_dir):
