@@ -15,12 +15,15 @@ from minigrid.core.constants import (
 def build_model(cfg, obs_space, action_space):
     if "ObjLocate" in cfg.env_name:
         model = ACModelWithEmbed_findobj(obs_space, action_space, cfg)
-    elif "memory" in cfg.env_name:
-        if cfg.use_embed:
-            if cfg.use_linear_procs:
-                model = ACModelWithLinearProcs(obs_space, action_space, cfg)
-            else:
-                model = ACModelWithEmbed(obs_space, action_space,cfg)
+    elif "Memory" in cfg.env_name:
+        if "scalarobs" in cfg.env_name:
+            model = ACModelWithScalarObs(obs_space, action_space, cfg)
+        else:
+            if cfg.use_embed:
+                if cfg.use_linear_procs:
+                    model = ACModelWithLinearProcs(obs_space, action_space, cfg)
+                else:
+                    model = ACModelWithEmbed(obs_space, action_space,cfg)
     else:
         model = ACModel(obs_space, action_space, cfg)
     
@@ -210,6 +213,68 @@ class ACModelWithEmbed(nn.Module, torch_ac.RecurrentACModel):
         if self.use_text:
             embed_text = self._get_embed_text(obs.text)
             embedding = torch.cat((embedding, embed_text), dim=1)
+
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        x = self.critic(embedding)
+        value = x.squeeze(1)
+        return dist, value, memory
+
+    def _get_embed_text(self, text):
+        _, hidden = self.text_rnn(self.word_embedding(text))
+        return hidden[-1]
+
+class ACModelWithScalarObs(nn.Module, torch_ac.RecurrentACModel):
+    def __init__(self, obs_space, action_space, cfg):
+        super().__init__()
+
+        # Decide which components are enabled
+        self.use_text = cfg.use_text
+        self.use_memory = cfg.use_memory
+        self.hidden_dim = cfg.hidden_dim
+       
+        self.state_embed = nn.Embedding(obs_space.n, cfg.hidden_dim)
+
+        # Define memory
+        if self.use_memory:
+            self.memory_rnn = nn.LSTMCell(cfg.hidden_dim, self.semi_memory_size)
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(cfg.hidden_dim, cfg.hidden_dim),
+            nn.Tanh(),
+            nn.Linear(cfg.hidden_dim, action_space.n)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(cfg.hidden_dim, cfg.hidden_dim),
+            nn.Tanh(),
+            nn.Linear(cfg.hidden_dim, 1)
+        )
+
+        # Initialize parameters correctly
+        init_params(self, cfg)
+
+    @property
+    def memory_size(self):
+        return 2*self.semi_memory_size
+
+    @property
+    def semi_memory_size(self):
+        return self.hidden_dim
+    
+    def forward(self, obs, memory):
+        
+        x = self.state_embed(obs)
+
+        if self.use_memory:
+            hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
+            hidden = self.memory_rnn(x, hidden)
+            embedding = hidden[0]
+            memory = torch.cat(hidden, dim=1)
+        else:
+            embedding = x
 
         x = self.actor(embedding)
         dist = Categorical(logits=F.log_softmax(x, dim=1))
