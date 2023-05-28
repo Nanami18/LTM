@@ -64,6 +64,7 @@ __C.action_dim = 1
 __C.hidden_dim = 64
 __C.n_blocks = 4
 __C.n_heads = 8
+__C.use_linear_state_encoder = False
 __C.drop_p = 0.1
 __C.max_timestep = 100
 __C.eval_reward = 1.0
@@ -72,6 +73,7 @@ __C.eval_reward = 1.0
 __C.num_episodes = 1000
 __C.num_workers = 8
 __C.reward_pertubation = 0.0
+__C.sampling_from_beginning = True
 
 # Inference
 __C.shift = 0
