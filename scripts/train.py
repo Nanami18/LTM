@@ -71,11 +71,14 @@ if __name__ == "__main__":
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-    # obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
-    obs_space = envs[0].observation_space
-    preprocess_obss = None
-    if "vocab" in status:
-        preprocess_obss.vocab.load_vocab(status["vocab"])
+    if 'scalarobs' in cfg.env_name:
+        preprocess_obss = None
+        obs_space = envs[0].observation_space
+    else:
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(envs[0].observation_space)
+        obs_space = envs[0].observation_space
+        if "vocab" in status:
+            preprocess_obss.vocab.load_vocab(status["vocab"])
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
