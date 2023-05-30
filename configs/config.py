@@ -75,6 +75,11 @@ __C.num_workers = 8
 __C.reward_pertubation = 0.0
 __C.sampling_from_beginning = True
 
+# RMT
+__C.use_rmt = False
+__C.memory_size = 5
+__C.num_bptt = 1  # by default BPTT to one past segment
+
 # Inference
 __C.shift = 0
 __C.argmax = False
