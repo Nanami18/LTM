@@ -16,6 +16,114 @@ import envs
 from models.decision_transformer_model import build_model
 from decision_transformer.dataset_generation import generate_expert_trajectories, generate_random_trajectories, HallwayMemoryEnvDataset
 
+def basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status):
+    model.train()
+    trained_frames = status["num_frames"]
+    epoch_count = status['update']
+    start_time = time.time()
+    while trained_frames < cfg.frames:
+        cum_loss = 0
+        for batch in train_loader:
+            states, actions, rewards, timesteps, masks = batch
+            states = states.to(device)
+            actions = actions.to(device)
+            gt_actions = actions.detach().clone()
+            rewards = rewards.to(device)
+            timesteps = timesteps.to(device)
+            masks = masks.to(device)
+            # breakpoint()
+
+            action_logits = model(rewards, states, actions, timesteps, masks)
+            # Compute loss and update the model
+            if cfg.discrete_action:
+                # Ignore padding when calculating the loss
+                gt_actions = torch.where(masks[:,0,0,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
+                # Downweight forward actions
+                weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
+                loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
+            else:
+                loss = torch.nn.functional.mse_loss(action_logits, actions)
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+            optimizer.step()
+            cum_loss += loss.item()
+
+            trained_frames += states.shape[0]
+            
+        epoch_count += 1
+        if epoch_count % cfg.log_interval == 0:
+            training_time = time.time() - start_time
+            txt_logger.info(f"Epoch {epoch_count} | Loss: {cum_loss} | Training time: {training_time}")
+
+        if epoch_count % cfg.save_interval == 0:
+            status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
+            utils.save_status(status, model_dir)
+            txt_logger.info("Status saved")
+
+    status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
+    return status
+
+
+def rmt_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status):
+    model.train()
+    trained_frames = status["num_frames"]
+    epoch_count = status['update']
+    start_time = time.time()
+    while trained_frames < cfg.frames:
+        cum_loss = 0
+        for batch in train_loader:
+            states, actions, rewards, timesteps, masks = batch
+            states = states.to(device)
+            actions = actions.to(device)
+            gt_actions = actions.detach().clone()
+            rewards = rewards.to(device)
+            timesteps = timesteps.to(device)
+            masks = masks.to(device)
+            action_predictions = torch.zeros((states.shape[0], states.shape[1], env.action_space.n)).to(device)
+
+            time_break = range(0, cfg.context_length, states.shape[1])
+            memory = None
+            for i in range(len(time_break)):
+                cur_states = states[:, cfg.context_length*i:cfg.context_length*(i+1)]
+                cur_actions = actions[:, cfg.context_length*i:cfg.context_length*(i+1)]
+                cur_rewards = rewards[:, cfg.context_length*i:cfg.context_length*(i+1)]
+                cur_timesteps = timesteps[:, cfg.context_length*i:cfg.context_length*(i+1)]
+                cur_masks = masks[:, :, cfg.context_length*i*3:cfg.context_length*(i+1)*3, cfg.context_length*i*3:cfg.context_length*(i+1)*3]
+                action_logits, memory = model(cur_rewards, cur_states, cur_actions, cur_timesteps, cur_masks, memory)
+                action_predictions[:, cfg.context_length*i:cfg.context_length*(i+1)] = action_logits
+
+            # Compute loss and update the model
+            if cfg.discrete_action:
+                # Ignore padding when calculating the loss
+                gt_actions = torch.where(masks[:,0,0,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
+                # Downweight forward actions
+                weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
+                loss = torch.nn.functional.cross_entropy(action_predictions.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
+            else:
+                loss = torch.nn.functional.mse_loss(action_predictions, actions)
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
+            optimizer.step()
+            cum_loss += loss.item()
+
+            trained_frames += states.shape[0]
+            
+        epoch_count += 1
+        if epoch_count % cfg.log_interval == 0:
+            training_time = time.time() - start_time
+            txt_logger.info(f"Epoch {epoch_count} | Loss: {cum_loss} | Training time: {training_time}")
+
+        if epoch_count % cfg.save_interval == 0:
+            status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
+            utils.save_status(status, model_dir)
+            txt_logger.info("Status saved")
+
+    status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
+    return status
+    
 
 # Parse arguments
 
@@ -92,55 +200,9 @@ if __name__ == "__main__":
 
     # Build dataloader
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
-
-    # Train model
-    model.train()
-    trained_frames = status["num_frames"]
-    epoch_count = status['update']
-    start_time = time.time()
-
-    while trained_frames < cfg.frames:
-        cum_loss = 0
-        for batch in train_loader:
-            states, actions, rewards, timesteps, masks = batch
-            states = states.to(device)
-            actions = actions.to(device)
-            gt_actions = actions.detach().clone()
-            rewards = rewards.to(device)
-            timesteps = timesteps.to(device)
-            masks = masks.to(device)
-            # breakpoint()
-
-            action_logits = model(rewards, states, actions, timesteps, masks)
-            # Compute loss and update the model
-            if cfg.discrete_action:
-                # Ignore padding when calculating the loss
-                gt_actions = torch.where(masks[:,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
-                # Downweight forward actions
-                weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
-                loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
-            else:
-                loss = torch.nn.functional.mse_loss(action_logits, actions)
-
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-            optimizer.step()
-            cum_loss += loss.item()
-
-            trained_frames += states.shape[0]
-            
-        epoch_count += 1
-        if epoch_count % cfg.log_interval == 0:
-            training_time = time.time() - start_time
-            txt_logger.info(f"Epoch {epoch_count} | Loss: {cum_loss} | Training time: {training_time}")
-
-        if epoch_count % cfg.save_interval == 0:
-            status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
-            utils.save_status(status, model_dir)
-            txt_logger.info("Status saved")
-
-    status = {"num_frames": trained_frames, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(), "update": epoch_count}
+    if cfg.use_rmt:
+        status = rmt_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status)
+    else:
+        status = basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status)
     utils.save_status(status, model_dir)
     txt_logger.info("Training Completed, saved final checkpoint")
-

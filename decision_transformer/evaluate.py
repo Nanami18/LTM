@@ -74,9 +74,13 @@ if __name__ == "__main__":
             rewards = rewards.unsqueeze(0).unsqueeze(0).unsqueeze(0)
             actions = None
             counter = 0
+            memory = None
             
             while not terminated and not truncated:
-                action_logits = model.inference(rewards, states, actions, timesteps)
+                if cfg.use_rmt:
+                    action_logits, memory = model.inference(rewards, states, actions, timesteps, None, memory)
+                else:
+                    action_logits = model.inference(rewards, states, actions, timesteps)
                 if cfg.argmax:
                     action = torch.argmax(action_logits, dim=2)
                 else:

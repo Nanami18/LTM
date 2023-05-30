@@ -60,7 +60,7 @@ class HallwayMemoryEnvDataset(Dataset):
     def __init__(self, trajectories, cfg):
         self.trajectories = trajectories
         self.num_traj = len(trajectories)
-        self.context_length = cfg.context_length
+        self.context_length = cfg.context_length if not cfg.use_rmt else cfg.context_length * (cfg.num_BPTT+1)
         self.gamma = cfg.discount
         self.scalar_only = "scalarobs" in cfg.env_name
         self.sampling_from_beginning = cfg.sampling_from_beginning
@@ -101,13 +101,17 @@ class HallwayMemoryEnvDataset(Dataset):
         rewards = np.expand_dims(rewards, axis=-1)
 
         # Pad to right
-        # states = np.concatenate([states, np.zeros((self.context_length - len(states), *self.image_obs_dim))], axis=0)
+        # if not self.scalar_only:
+        #     states = np.concatenate([np.zeros((self.context_length - len(states), *self.image_obs_dim)), states], axis=0)
+        # else:
+        #     states = np.concatenate([np.zeros((self.context_length - len(states))), states], axis=0)
         # actions = np.concatenate([actions, np.zeros((self.context_length - len(actions), self.act_dim))], axis=0)
-        # rewards = np.concatenate([rewards, np.zeros((self.context_length - len(rewards)))], axis=0)
+        # rewards = np.concatenate([rewards, np.zeros((self.context_length - len(rewards), 1))], axis=0)
         # timesteps = np.concatenate((np.arange(start, end), np.zeros(self.context_length - (end-start))), axis=0)
         
         # mask == 1 `states` is valid, mask == 0 `states` is invalid (padding)
         # mask = np.concatenate((np.ones(end-start), np.zeros(self.context_length - (end-start))), axis=0)
+        # mask = np.repeat(mask, 3)
 
         # Pad to left
         if not self.scalar_only:
@@ -121,7 +125,12 @@ class HallwayMemoryEnvDataset(Dataset):
         # mask == 1 `states` is valid, mask == 0 `states` is invalid (padding)
         mask = np.concatenate((np.zeros(self.context_length - (end-start)), np.ones(end-start)), axis=0)
         mask = np.repeat(mask, 3)
-        # Change the mask to causal
+
+        # Convert attention to mask to be 2D, with an extra dimension for attention heads
+        mask = torch.tensor(mask)
+        T = mask.shape[0]
+        mask = mask.view(1, 1, T)
+        mask = mask.repeat(1, T, 1)
 
         # Convert to torch tensors
         states = torch.from_numpy(states).float()
