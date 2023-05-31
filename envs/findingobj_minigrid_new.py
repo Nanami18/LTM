@@ -30,6 +30,21 @@ def register_envs():
         entry_point="envs.findingobj_minigrid_new:MiniGrid_ObjLocateS13New",
         kwargs={"size":13, "agent_view_size":3}
     )
+    gym.register(
+        id="MiniGrid-ObjLocateS13NewHard",
+        entry_point="envs.findingobj_minigrid_new:MiniGrid_ObjLocateS13NewHard",
+        kwargs={"size":13, "agent_view_size":3}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocateS13NewEasy",
+        entry_point="envs.findingobj_minigrid_new:MiniGrid_ObjLocateS13NewEasy",
+        kwargs={"size":13, "agent_view_size":3}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocateS13NewBeginner",
+        entry_point="envs.findingobj_minigrid_new:MiniGrid_ObjLocateS13NewBeginner",
+        kwargs={"size":13, "agent_view_size":3}
+    )
 
 
 # An environment where the agent has to find a ball given the instruction that specify the color
@@ -217,3 +232,109 @@ class MiniGrid_ObjLocateS13New(MiniGridEnv):
         self.grid.vert_wall(2, 1, 4)
         
 # return first action in the shortest path
+
+class MiniGrid_ObjLocateS13NewHard(MiniGrid_ObjLocateS13New):
+
+    def _gen_grid(self, width, height):
+        # Create an empty grid
+        self.grid = Grid(width, height)
+
+        # Generate walls to make a maze
+        self.grid.wall_rect(0, 0, width, height)
+        self.maze_gen(width, height)
+
+        # Place balls of different colors in random locations
+        for color in self.colors:
+            ball = Ball(color)
+            ball.can_overlap = lambda : True
+            ball.can_pickup = lambda : False
+            self.place_obj(ball)
+            self.obj_loc[color] = ball.cur_pos
+
+        # Set the agent's starting point
+        self.agent_pos = self.place_agent()
+
+        # Set the target ball as specified in the mission text
+        target_color = self.np_random.choice(self.colors)
+        self.target_pos = self.obj_loc[target_color]
+
+        self.mission = f'locate the {target_color} ball'
+
+    def maze_gen(self, width, height):
+        self.grid.horz_wall(2, 2, 6)
+        self.grid.horz_wall(4, 4, 4)
+        self.grid.vert_wall(9, 2, 7)
+        self.grid.vert_wall(5, 3, 1)
+        self.grid.horz_wall(2, 6, 6)
+        self.grid.horz_wall(2, 9, 3)
+        self.grid.horz_wall(7, 9, 3)
+        self.grid.vert_wall(6, 7, 3)
+        self.grid.vert_wall(4, 10, 2)
+        self.grid.horz_wall(10, 2, 1)
+        self.grid.vert_wall(2, 1, 4)
+        self.grid.vert_wall(2, 8, 1)
+        self.grid.vert_wall(8, 10, 2)
+
+class MiniGrid_ObjLocateS13NewEasy(MiniGrid_ObjLocateS13New):
+
+    def _gen_grid(self, width, height):
+        # Create an empty grid
+        self.grid = Grid(width, height)
+
+        # Generate walls to make a maze
+        self.grid.wall_rect(0, 0, width, height)
+        self.maze_gen(width, height)
+
+        # Place balls of different colors in random locations
+        for color in self.colors:
+            ball = Ball(color)
+            ball.can_overlap = lambda : True
+            ball.can_pickup = lambda : False
+            self.place_obj(ball)
+            self.obj_loc[color] = ball.cur_pos
+
+        # Set the agent's starting point
+        self.agent_pos = self.place_agent()
+
+        # Set the target ball as specified in the mission text
+        target_color = self.np_random.choice(self.colors)
+        self.target_pos = self.obj_loc[target_color]
+
+        self.mission = f'locate the {target_color} ball'
+
+    def maze_gen(self, width, height):
+        self.grid.horz_wall(2, 2, 3)
+        self.grid.horz_wall(8, 10, 3)
+        self.grid.vert_wall(4, 8, 3)
+        self.grid.vert_wall(9, 2, 3)
+
+class MiniGrid_ObjLocateS13NewBeginner(MiniGrid_ObjLocateS13New):
+
+    def _gen_grid(self, width, height):
+        # Create an empty grid
+        self.grid = Grid(width, height)
+
+        # Generate walls to make a maze
+        self.grid.wall_rect(0, 0, width, height)
+        self.maze_gen(width, height)
+
+        # Place balls of different colors in random locations
+        for color in self.colors:
+            ball = Ball(color)
+            ball.can_overlap = lambda : True
+            ball.can_pickup = lambda : False
+            self.place_obj(ball)
+            self.obj_loc[color] = ball.cur_pos
+
+        # Set the agent's starting point
+        self.agent_pos = self.place_agent()
+
+        # Set the target ball as specified in the mission text
+        target_color = self.np_random.choice(self.colors)
+        self.target_pos = self.obj_loc[target_color]
+
+        self.mission = f'locate the {target_color} ball'
+
+    def maze_gen(self, width, height):
+        # self.grid.horz_wall(2, 2, 3)
+        pass
