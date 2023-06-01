@@ -12,9 +12,14 @@ from minigrid.core.constants import (
     DIR_TO_VEC
 )
 
+import functools 
+
 def build_model(cfg, obs_space, action_space):
     if "ObjLocate" in cfg.env_name:
-        model = ACModelWithEmbed_findobj(obs_space, action_space, cfg)
+        if cfg.use_linear_procs:
+            model = ACModelWithLinearProcs_findobj(obs_space, action_space, cfg)
+        else:
+            model = ACModelWithEmbed_findobj(obs_space, action_space, cfg)
     elif "Memory" in cfg.env_name:
         if "scalarobs" in cfg.env_name:
             model = ACModelWithScalarObs(obs_space, action_space, cfg)
@@ -313,7 +318,13 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
 
         # Define memory
         if self.use_memory:
-            self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+            if cfg.num_lstm_layers == 0:
+                self.layer_multiplier = 1
+                self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+            else:
+                self.layer_multiplier = cfg.num_lstm_layers
+                self.memory_rnn = nn.LSTM(self.image_embedding_size, self.image_embedding_size, cfg.num_lstm_layers, batch_first=True, dropout=cfg.lstm_dropout)
+            self.num_lstm_layers = cfg.num_lstm_layers
 
         # Define text embedding
         if self.use_text:
@@ -350,7 +361,7 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
 
     @property
     def semi_memory_size(self):
-        return self.image_embedding_size
+        return self.image_embedding_size * self.layer_multiplier
 
     def forward(self, obs, memory):
         
@@ -366,10 +377,18 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
         x = x.reshape(x.shape[0], -1)
 
         if self.use_memory:
-            hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
-            hidden = self.memory_rnn(x, hidden)
-            embedding = hidden[0]
-            memory = torch.cat(hidden, dim=1)
+            if self.num_lstm_layers == 0:
+                hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
+                hidden = self.memory_rnn(x, hidden)
+                embedding = hidden[0]
+                memory = torch.cat(hidden, dim=1)
+            else:
+                h = memory[:, :self.semi_memory_size].reshape(memory.shape[0], self.layer_multiplier, self.image_embedding_size).transpose(0,1).contiguous()
+                c = memory[:, self.semi_memory_size:].reshape(memory.shape[0], self.layer_multiplier, self.image_embedding_size).transpose(0,1).contiguous()
+                hidden = (h, c)
+                _, hidden = self.memory_rnn(x.unsqueeze(1), hidden)
+                embedding = hidden[0].transpose(0,1).reshape(memory.shape[0], -1)
+                memory = torch.cat(hidden, dim=0).transpose(0,1).reshape(memory.shape[0], -1)
         else:
             embedding = x
 
@@ -378,6 +397,120 @@ class ACModelWithEmbed_findobj(nn.Module, torch_ac.RecurrentACModel):
             embedding = torch.cat((embedding, embed_text), dim=1)
         
         target_embedding = self.color_embed(target_color.long())
+        embedding = torch.cat((embedding, target_embedding), dim=1)
+
+        x = self.actor(embedding)
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        x = self.critic(embedding)
+        value = x.squeeze(1)
+        return dist, value, memory
+
+    def _get_embed_text(self, text):
+        _, hidden = self.text_rnn(self.word_embedding(text))
+        return hidden[-1]
+
+class ACModelWithLinearProcs_findobj(nn.Module, torch_ac.RecurrentACModel):
+    def __init__(self, obs_space, action_space, cfg):
+        super().__init__()
+
+        # Decide which components are enabled
+        self.use_text = cfg.use_text
+        self.use_memory = cfg.use_memory
+       
+        # Target embedding
+        self.target_embed = nn.Embedding(len(COLOR_TO_IDX), cfg.token_embed_size)
+
+        # State embedding
+        if isinstance(obs_space['image'], tuple):
+            self.state_embed = nn.Sequential(
+                nn.Linear(functools.reduce(lambda x, y : x*y, obs_space['image']), cfg.image_embed_size),
+                nn.ReLU(),
+                nn.Linear(cfg.image_embed_size, cfg.image_embed_size),
+            )
+        else:
+            self.state_embed = nn.Sequential(
+                nn.Linear(functools.reduce(lambda x, y : x*y, obs_space['image'].shape), cfg.image_embed_size),
+                nn.ReLU(),
+                nn.Linear(cfg.image_embed_size, cfg.image_embed_size),
+            )
+
+        self.image_embedding_size = cfg.image_embed_size
+        self.token_embed_size = cfg.token_embed_size
+
+        # Define memory
+        if self.use_memory:
+            if cfg.num_lstm_layers == 0:
+                self.layer_multiplier = 1
+                self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+            else:
+                self.layer_multiplier = cfg.num_lstm_layers
+                self.memory_rnn = nn.LSTM(self.image_embedding_size, self.image_embedding_size, cfg.num_lstm_layers, batch_first=True, dropout=cfg.lstm_dropout)
+            self.num_lstm_layers = cfg.num_lstm_layers
+
+        # Define text embedding
+        if self.use_text:
+            self.word_embedding_size = 32
+            self.word_embedding = nn.Embedding(obs_space["text"], self.word_embedding_size)
+            self.text_embedding_size = 128
+            self.text_rnn = nn.GRU(self.word_embedding_size, self.text_embedding_size, batch_first=True)
+
+        # Resize image embedding
+        self.embedding_size = self.semi_memory_size + self.token_embed_size
+        if self.use_text:
+            self.embedding_size += self.text_embedding_size
+
+        # Define actor's model
+        self.actor = nn.Sequential(
+            nn.Linear(self.embedding_size, self.embedding_size),
+            nn.Tanh(),
+            nn.Linear(self.embedding_size, action_space.n)
+        )
+
+        # Define critic's model
+        self.critic = nn.Sequential(
+            nn.Linear(self.embedding_size, self.embedding_size),
+            nn.Tanh(),
+            nn.Linear(self.embedding_size, 1)
+        )
+
+        # Initialize parameters correctly
+        init_params(self, cfg)
+
+    @property
+    def memory_size(self):
+        return 2*self.semi_memory_size
+
+    @property
+    def semi_memory_size(self):
+        return self.image_embedding_size * self.layer_multiplier
+
+    def forward(self, obs, memory):
+        
+        x = obs.image
+        target_color = obs.target_color
+        x = self.state_embed(torch.flatten(x, start_dim=1))
+
+        if self.use_memory:
+            if self.num_lstm_layers == 0:
+                hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
+                hidden = self.memory_rnn(x, hidden)
+                embedding = hidden[0]
+                memory = torch.cat(hidden, dim=1)
+            else:
+                h = memory[:, :self.semi_memory_size].reshape(memory.shape[0], self.layer_multiplier, self.image_embedding_size).transpose(0,1).contiguous()
+                c = memory[:, self.semi_memory_size:].reshape(memory.shape[0], self.layer_multiplier, self.image_embedding_size).transpose(0,1).contiguous()
+                hidden = (h, c)
+                _, hidden = self.memory_rnn(x.unsqueeze(1), hidden)
+                embedding = hidden[0].transpose(0,1).reshape(memory.shape[0], -1)
+                memory = torch.cat(hidden, dim=0).transpose(0,1).reshape(memory.shape[0], -1)
+        else:
+            embedding = x
+
+        if self.use_text:
+            embed_text = self._get_embed_text(obs.text)
+            embedding = torch.cat((embedding, embed_text), dim=1)
+        
+        target_embedding = self.target_embed(target_color.long())
         embedding = torch.cat((embedding, target_embedding), dim=1)
 
         x = self.actor(embedding)
