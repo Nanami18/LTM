@@ -177,6 +177,10 @@ class HallwayMemory_DT(nn.Module):
         # self.state_predictor = nn.Linear(self.hidden_dim, self.state_dim)
         # self.return_predictor = nn.Linear(self.hidden_dim, 1)
 
+        # Attention mask related
+        ones = torch.ones((self.max_length, self.max_length))
+        self.causal_mask = torch.tril(ones).view(1, 1, self.max_length, self.max_length).cuda()
+
     def forward(self, returns, states, actions, timestep, attention_mask=None):
 
         B, T = states.shape[0], states.shape[1]
@@ -264,10 +268,8 @@ class HallwayMemory_DT(nn.Module):
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
         hidden = self.embed_ln(hidden)
 
-        ones = torch.ones((self.max_length, self.max_length))
-        causal_mask = torch.tril(ones).view(1, self.max_length, self.max_length).cuda()
         if attention_mask is not None:
-            attention_mask = causal_mask * attention_mask
+            attention_mask = self.causal_mask * attention_mask
             indices = torch.arange(T)
             attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
@@ -320,6 +322,10 @@ class HallwayMemoryScalarObs_DT(nn.Module):
         # self.state_predictor = nn.Linear(self.hidden_dim, self.state_dim)
         # self.return_predictor = nn.Linear(self.hidden_dim, 1)
 
+        # Attention mask related
+        ones = torch.ones((self.max_length, self.max_length))
+        self.causal_mask = torch.tril(ones).view(1, 1, self.max_length, self.max_length).cuda()
+
     def forward(self, returns, states, actions, timestep, attention_mask=None):
 
         B, T = states.shape[0], states.shape[1]
@@ -340,10 +346,8 @@ class HallwayMemoryScalarObs_DT(nn.Module):
         
         hidden = self.embed_ln(hidden)
         # Transformer processing
-        ones = torch.ones((self.max_length, self.max_length))
-        causal_mask = torch.tril(ones).view(1, self.max_length, self.max_length).cuda()
         if attention_mask is not None:
-            attention_mask = causal_mask * attention_mask
+            attention_mask = self.causal_mask * attention_mask
             indices = torch.arange(T)
             attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
@@ -441,6 +445,10 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
         self.read_mem_embedding = nn.Parameter(torch.zeros(self.memory_size, self.hidden_dim))
         nn.init.normal(self.read_mem_embedding, mean=0, std=0.02)
 
+        # Attention mask related
+        ones = torch.ones((self.max_length, self.max_length))
+        self.causal_mask = torch.tril(ones).view(1, 1, self.max_length, self.max_length).cuda()
+
     def forward(self, returns, states, actions, timestep, attention_mask=None, past_memory=None):
 
         B, T = states.shape[0], states.shape[1]
@@ -469,9 +477,7 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
         hidden = self.embed_ln(hidden)
         # Transformer processing
         if attention_mask is not None:
-            ones = torch.ones((info_T, info_T))
-            causal_mask = torch.tril(ones).view(1, info_T, info_T).cuda()
-            attention_mask = causal_mask * attention_mask
+            attention_mask = self.causal_mask * attention_mask
             # Always allow self attention to avoid error
             indices = torch.arange(attention_mask.shape[2])
             attention_mask[:, :, indices, indices] = 1
