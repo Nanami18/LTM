@@ -42,6 +42,26 @@ def register_envs():
         entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateS13",
         kwargs={"size":13, "agent_view_size":7}
     )
+    gym.register(
+        id="MiniGrid-ObjLocate-Empty-S9",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocate_Empty",
+        kwargs={"size":9, "agent_view_size":7}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocate-Empty-S13",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocate_Empty",
+        kwargs={"size":13, "agent_view_size":7}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocateEasy-S13",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateEasyS13",
+        kwargs={"size":13, "agent_view_size":7}
+    )
+    gym.register(
+        id="MiniGrid-ObjLocateEasy-S9",
+        entry_point="envs.findingobj_minigrid:MiniGrid_ObjLocateEasyS13",
+        kwargs={"size":9, "agent_view_size":7}
+    )
 
 # An environment where the agent has to find a ball given the instruction that specify the color
 class MiniGrid_ObjLocateS13(MiniGridEnv):
@@ -116,15 +136,80 @@ class MiniGrid_ObjLocateS13(MiniGridEnv):
         obs['target_color'] = COLOR_TO_IDX[self.target_color]
         return obs, info
 
-    def maze_gen(self, width, height):
-        self.grid.horz_wall(2, 2, 6)
-        self.grid.horz_wall(4, 4, 4)
-        self.grid.vert_wall(9, 2, 5)
-        self.grid.horz_wall(2, 6, 6)
-        self.grid.horz_wall(2, 9, 3)
-        self.grid.horz_wall(7, 9, 3)
-        self.grid.vert_wall(6, 7, 3)
-        self.grid.vert_wall(4, 10, 2)
+    def ColoredWall(self, color):
+        class CWall(Wall):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs, color=color)
+        return CWall
 
-        self.grid.vert_wall(2, 1, 4)
+    def maze_gen(self, width, height):
+        self.grid.horz_wall(2, 2, 6, obj_type=self.ColoredWall(color='green'))
+        self.grid.horz_wall(4, 4, 4, obj_type=self.ColoredWall(color='yellow'))
+        self.grid.vert_wall(9, 2, 5, obj_type=self.ColoredWall(color='red'))
+        self.grid.horz_wall(2, 6, 6, obj_type=self.ColoredWall(color='blue'))
+        self.grid.horz_wall(2, 9, 3, obj_type=self.ColoredWall(color='purple'))
+        self.grid.horz_wall(7, 9, 3, obj_type=self.ColoredWall(color='green'))
+        self.grid.vert_wall(6, 7, 3, obj_type=self.ColoredWall(color='yellow'))
+        self.grid.vert_wall(4, 10, 2, obj_type=self.ColoredWall(color='purple'))
+
+        self.grid.vert_wall(2, 1, 4, obj_type=self.ColoredWall(color='red'))
+
+    def compute_expert_action(self):
+        tx, ty = self.target_pos
+        goal_positions = set([(tx, ty)])
         
+        # compute shortest path
+        agent_pose = self.agent_pos[0], self.agent_pos[1], self.agent_dir
+        open_set = [(agent_pose, [])]
+        closed_set = set()
+        while True:
+            try:
+                pose, path = open_set.pop(0)
+            except IndexError:
+                path = [self.actions.toggle]
+                break
+                
+            closed_set.add(pose)
+            x, y, direction = pose
+            if (x,y) in goal_positions:
+                path.append(self.actions.toggle)
+                break
+
+            left_pose = (x, y, (direction-1)%4)
+            if left_pose not in closed_set:
+                left_path = path[:]
+                left_path.append(self.actions.left)
+                open_set.append((left_pose, left_path))
+            
+            # right
+            right_pose = (x, y, (direction+1)%4)
+            if right_pose not in closed_set:
+                right_path = path[:]
+                right_path.append(self.actions.right)
+                open_set.append((right_pose, right_path))
+            
+            # forward
+            vx, vy = DIR_TO_VEC[direction]
+            fx = x + vx
+            fy = y + vy
+            forward_cell = self.grid.get(fx, fy)
+            if forward_cell is None or forward_cell.can_overlap():
+                forward_pose = (fx, fy, direction)
+                if forward_pose not in closed_set:
+                    forward_path = path[:]
+                    forward_path.append(self.actions.forward)
+                    open_set.append((forward_pose, forward_path))
+        
+        return path[0]
+
+
+class MiniGrid_ObjLocate_Empty(MiniGrid_ObjLocateS13):
+    def maze_gen(self, width, height):
+        return
+        
+class MiniGrid_ObjLocateEasyS13(MiniGrid_ObjLocateS13):
+    def maze_gen(self, width, height):
+        self.grid.horz_wall(1, height//3, (width-3)//2, obj_type=self.ColoredWall(color='yellow'))
+        self.grid.horz_wall((width-3)//2+1, height//3, (width-3)-((width-3)//2), obj_type=self.ColoredWall(color='red'))
+        self.grid.horz_wall(1, height-height//3, (width-3)//2, obj_type=self.ColoredWall(color='blue'))
+        self.grid.horz_wall((width-3)//2+1, height-height//3, (width-3)-((width-3)//2), obj_type=self.ColoredWall(color='purple'))
