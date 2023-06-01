@@ -263,6 +263,13 @@ class HallwayMemory_DT(nn.Module):
         else:
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
         hidden = self.embed_ln(hidden)
+
+        ones = torch.ones((self.max_length, self.max_length))
+        causal_mask = torch.tril(ones).view(1, self.max_length, self.max_length).cuda()
+        if attention_mask is not None:
+            attention_mask = causal_mask * attention_mask
+            indices = torch.arange(T)
+            attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
         # get h reshaped such that its size = (B x 3 x T x h_dim) and
         # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
@@ -330,8 +337,8 @@ class HallwayMemoryScalarObs_DT(nn.Module):
             hidden = torch.stack([returns_embeddings, states_embeddings, actions_embeddings], dim=1).permute(0,2,1,3).reshape(B, 3*T, self.hidden_dim)
         else:
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
+        
         hidden = self.embed_ln(hidden)
-
         # Transformer processing
         ones = torch.ones((self.max_length, self.max_length))
         causal_mask = torch.tril(ones).view(1, self.max_length, self.max_length).cuda()
@@ -406,6 +413,7 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
         self.hidden_dim = cfg.hidden_dim
 
         input_seq_len = 3 * cfg.context_length + cfg.memory_size * 2
+        self.max_length = input_seq_len
         blocks = [Block(cfg.hidden_dim, input_seq_len, cfg.n_heads, cfg.drop_p) for _ in range(cfg.n_blocks)]
         self.transformer = SequentialTransformerBlock(*blocks)
 
@@ -450,6 +458,7 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
             hidden = torch.stack([returns_embeddings, states_embeddings, actions_embeddings], dim=1).permute(0,2,1,3).reshape(B, 3*T, self.hidden_dim)
         else:
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
+        info_T = hidden.shape[1]
         # Handle memory tokens
         if past_memory is None:
             hidden = torch.cat([self.read_mem_embedding.repeat(B, 1, 1), hidden, self.memory_tokens.repeat(B, 1, 1)], dim=1)
@@ -458,10 +467,18 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
             hidden = torch.cat([read_tokens, hidden, past_memory], dim=1)
 
         hidden = self.embed_ln(hidden)
-        attention_mask = F.pad(attention_mask, (0, self.memory_size, self.memory_size, 0), value = False)
-        attention_mask = F.pad(attention_mask, (self.memory_size, 0, 0, self.memory_size), value = True)
-
+        # Transformer processing
+        if attention_mask is not None:
+            ones = torch.ones((info_T, info_T))
+            causal_mask = torch.tril(ones).view(1, info_T, info_T).cuda()
+            attention_mask = causal_mask * attention_mask
+            # Always allow self attention to avoid error
+            indices = torch.arange(attention_mask.shape[2])
+            attention_mask[:, :, indices, indices] = 1
+            attention_mask = F.pad(attention_mask, (0, self.memory_size, self.memory_size, 0), value = False)
+            attention_mask = F.pad(attention_mask, (self.memory_size, 0, 0, self.memory_size), value = True)
         hidden = self.transformer(hidden, attention_mask)
+        
         memory_output = hidden[:, -self.memory_size:, :]
         # get h reshaped such that its size = (B x 3 x T x h_dim) and
         # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
@@ -499,6 +516,7 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
             hidden = torch.stack([returns_embeddings, states_embeddings, actions_embeddings], dim=1).permute(0,2,1,3).reshape(B, 3*T, self.hidden_dim)
         else:
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
+        info_T = hidden.shape[1]
 
         # Handle memory tokens
         if past_memory is None:
@@ -509,13 +527,18 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
 
         hidden = self.embed_ln(hidden)
         if attention_mask is not None:
+            ones = torch.ones((info_T, info_T))
+            causal_mask = torch.tril(ones).view(1, info_T, info_T).cuda()
+            attention_mask = causal_mask * attention_mask
             attention_mask = F.pad(attention_mask, (0, self.memory_size, self.memory_size, 0), value = False)
             attention_mask = F.pad(attention_mask, (self.memory_size, 0, 0, self.memory_size), value = True)
         else:
-            attention_mask = torch.ones(B, 1, hidden.shape[1]-self.memory_size*2, hidden.shape[1]-self.memory_size*2).to(hidden.device)
+            ones = torch.ones((info_T, info_T))
+            attention_mask = torch.tril(ones).view(1, info_T, info_T).cuda()
             attention_mask = F.pad(attention_mask, (0, self.memory_size, self.memory_size, 0), value = False)
             attention_mask = F.pad(attention_mask, (self.memory_size, 0, 0, self.memory_size), value = True)
         hidden = self.transformer(hidden, attention_mask)
+        
         memory_output = hidden[:, -self.memory_size:, :]
         # get h reshaped such that its size = (B x 3 x T x h_dim) and
         # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
