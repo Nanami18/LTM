@@ -83,7 +83,7 @@ def rmt_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_
             masks = masks.to(device)
             action_predictions = torch.zeros((states.shape[0], states.shape[1], env.action_space.n)).to(device)
 
-            time_break = range(0, cfg.context_length, states.shape[1])
+            time_break = range(0, states.shape[1], cfg.context_length)
             memory = None
             for i in range(len(time_break)):
                 cur_states = states[:, cfg.context_length*i:cfg.context_length*(i+1)]
@@ -95,6 +95,8 @@ def rmt_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_
                 action_predictions[:, cfg.context_length*i:cfg.context_length*(i+1)] = action_logits
 
             # Compute loss and update the model
+            # print(gt_actions[0,-2,0])
+            # print(action_predictions[0,-2,:])
             if cfg.discrete_action:
                 # Ignore padding when calculating the loss
                 gt_actions = torch.where(masks[:,0,0,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
