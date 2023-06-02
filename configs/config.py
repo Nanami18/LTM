@@ -51,6 +51,8 @@ __C.init_var = False
 
 # LSTM
 __C.use_embed = True
+__C.num_lstm_layers = 0
+__C.lstm_dropout = 0
 
 # Transfomrer
 __C.num_decoder_layers = 1
