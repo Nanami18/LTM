@@ -68,7 +68,10 @@ if __name__ == "__main__":
             cur_episode_return = 0
             obs, _ = env.reset()
             states = model.convert_obs_inf(obs)
-            states = states.to(device)
+            if isinstance(states, dict):
+                states = {k: v.to(device) for k,v in states.items()}
+            else:
+                states = states.to(device)
             timesteps = torch.zeros((1,1), device=device).long()
             rewards = torch.tensor(cfg.eval_reward, device=device).float()
             rewards = rewards.unsqueeze(0).unsqueeze(0).unsqueeze(0)
@@ -81,6 +84,7 @@ if __name__ == "__main__":
                     action_logits, memory = model.inference(rewards, states, actions, timesteps, None, memory)
                 else:
                     action_logits = model.inference(rewards, states, actions, timesteps)
+                # print(action_logits[0, -1])
                 if cfg.argmax:
                     action = torch.argmax(action_logits, dim=2)
                 else:
@@ -93,12 +97,19 @@ if __name__ == "__main__":
                     truncated = True
                 
                 # Concatenate the new state, action, reward, and timestep
-                if states.shape[1] >= cfg.context_length:
-                    states = states[:,1:]
+                if rewards.shape[1] >= cfg.context_length:
+                    if isinstance(states, dict):
+                        states = {k : v[:,1:] for k, v in states.items()}
+                    else:
+                        states = states[:,1:]
                     rewards = rewards[:,1:]
                     actions = actions[:,1:]
                     timesteps = timesteps[:,1:]
-                states = torch.cat((states, model.convert_obs_inf(obs).to(device)), dim=1)
+                if isinstance(states, dict):
+                    new_obs = model.convert_obs_inf(obs)
+                    states = {k: torch.cat((v, new_obs[k].to(device)), dim=1) for k,v in states.items()}
+                else:
+                    states = torch.cat((states, model.convert_obs_inf(obs).to(device)), dim=1)
                 rewards = torch.cat((rewards, rewards[:,-1]-torch.tensor(reward, device=device).unsqueeze(0).unsqueeze(0).unsqueeze(0)), dim=1)
                 # if actions is not None:
                 #     actions = torch.cat((actions, action[:, -1]), dim=1)

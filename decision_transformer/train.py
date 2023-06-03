@@ -14,7 +14,13 @@ from configs.config import cfg, cfg_from_file
 
 import envs
 from models.decision_transformer_model import build_model
-from decision_transformer.dataset_generation import generate_expert_trajectories, generate_random_trajectories, HallwayMemoryEnvDataset
+from decision_transformer.dataset_generation import (
+    generate_expert_trajectories, 
+    generate_random_trajectories, 
+    HallwayMemoryEnvDataset, 
+    collate_fn_findingobj,
+    FindingObjEnvDataset,
+)
 
 def basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status):
     model.train()
@@ -25,13 +31,12 @@ def basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, mode
         cum_loss = 0
         for batch in train_loader:
             states, actions, rewards, timesteps, masks = batch
-            states = states.to(device)
+            states = {k:v.to(device) for k, v in states.items()}
             actions = actions.to(device)
             gt_actions = actions.detach().clone()
             rewards = rewards.to(device)
             timesteps = timesteps.to(device)
             masks = masks.to(device)
-            # breakpoint()
 
             action_logits = model(rewards, states, actions, timesteps, masks)
             # Compute loss and update the model
@@ -39,8 +44,12 @@ def basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, mode
                 # Ignore padding when calculating the loss
                 gt_actions = torch.where(masks[:,0,0,::3].unsqueeze(2) == 1, gt_actions, torch.tensor(-1).to(device))
                 # Downweight forward actions
-                weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
-                loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
+                if "Memory" in cfg.env_name:
+                    weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1]).cuda()
+                    loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1, weight=weight)
+                elif "ObjLocate" in cfg.env_name:
+                    weight = torch.tensor([1.0, 1.0, 0.1, 0.1, 5.0, 0.1, 0.1]).cuda()
+                    loss = torch.nn.functional.cross_entropy(action_logits.permute(0, 2, 1), gt_actions.squeeze(2), ignore_index=-1)
             else:
                 loss = torch.nn.functional.mse_loss(action_logits, actions)
 
@@ -50,7 +59,7 @@ def basic_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, mode
             optimizer.step()
             cum_loss += loss.item()
 
-            trained_frames += states.shape[0]
+            trained_frames += states['target'].shape[0]
             
         epoch_count += 1
         if epoch_count % cfg.log_interval == 0:
@@ -199,9 +208,15 @@ if __name__ == "__main__":
     print("Estimated epochs: {}".format(cfg.frames/cfg.num_episodes))
     if "Memory" in cfg.env_name:
         train_ds = HallwayMemoryEnvDataset(trajectories, cfg)
+    elif "ObjLocate" in cfg.env_name:
+        train_ds = FindingObjEnvDataset(trajectories, cfg)
 
     # Build dataloader
-    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
+    if "ObjLocate" in cfg.env_name:
+        collate_fn = collate_fn_findingobj
+    else:
+        collate_fn = None
+    train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers, collate_fn=collate_fn)
     if cfg.use_rmt:
         status = rmt_dt_training_loop(cfg, model, train_loader, optimizer, txt_logger, model_dir, status)
     else:
