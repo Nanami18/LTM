@@ -1,5 +1,5 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-MemoryS13-v0-almosthallwayobj"
 # Training
   seed: 1
   log_interval: 1

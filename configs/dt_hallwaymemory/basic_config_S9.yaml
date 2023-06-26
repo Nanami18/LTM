@@ -4,11 +4,11 @@
   seed: 1
   log_interval: 1
   save_interval: 10
-  frames: 100000
+  frames: 10000
   lr: 0.001
   gae_lambda: 0.95
   batch_size: 16
-  discount: 1.0
+  discount: 0.99
   max_grad_norm: 0.5
   optim_eps: 0.00000001
   optim_alpha: 0.99

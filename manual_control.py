@@ -8,8 +8,8 @@ from minigrid.minigrid_env import MiniGridEnv
 from minigrid.utils.window import Window
 from minigrid.wrappers import ImgObsWrapper, RGBImgPartialObsWrapper
 
-from envs.memory_minigrid import register_envs
-register_envs()
+import envs
+# register_envs()
 
 
 class ManualControl:
@@ -35,7 +35,10 @@ class ManualControl:
         self.window.show(block=True)
 
     def step(self, action: MiniGridEnv.Actions):
-        _, reward, terminated, truncated, _ = self.env.step(action)
+        obs, reward, terminated, truncated, _ = self.env.step(action)
+        # breakpoint()
+        print("expert action:", self.env.compute_expert_action())
+        # print("expert action:", int(self.env.compute_expert_action()))
         print(f"step={self.env.step_count}, reward={reward:.2f}")
 
         if terminated:
@@ -49,6 +52,8 @@ class ManualControl:
 
     def redraw(self):
         frame = self.env.get_frame(agent_pov=self.agent_view)
+        if hasattr(self.env, "mission"):
+            self.window.set_caption(self.env.mission)
         self.window.show_img(frame)
 
     def reset(self, seed=None):

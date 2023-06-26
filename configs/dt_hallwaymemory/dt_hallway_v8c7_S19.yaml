@@ -1,5 +1,5 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-MemoryS19-v0-almosthallwayobj"
 # Training
   seed: 1
   log_interval: 1
@@ -16,17 +16,17 @@
   text: False
   reward_pertubation: 0.0
 # Model
-  context_length: 10
+  context_length: 20
   discrete_action: True
   action_dim: 1
   image_embed_size: 128
   num_decoder_layers: 1
   n_head: 4
-  hidden_dim: 64
-  token_embed_size: 32
+  hidden_dim: 128
+  token_embed_size: 64
   init_var: True
-  n_blocks: 2
-  n_heads: 4
+  n_blocks: 4
+  n_heads: 8
   eval_reward: 0.9822222222222222
 # Inference
   shift: 0

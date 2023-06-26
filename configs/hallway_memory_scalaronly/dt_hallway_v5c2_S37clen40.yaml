@@ -1,5 +1,5 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-MemoryS37-scalarobs"
 # Training
   seed: 1
   log_interval: 1
@@ -16,7 +16,7 @@
   text: False
   reward_pertubation: 0.0
 # Model
-  context_length: 10
+  context_length: 40
   discrete_action: True
   action_dim: 1
   image_embed_size: 128

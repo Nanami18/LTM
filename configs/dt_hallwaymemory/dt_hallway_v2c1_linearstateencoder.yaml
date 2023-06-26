@@ -19,6 +19,7 @@
   context_length: 10
   discrete_action: True
   action_dim: 1
+  use_linear_state_encoder: True
   image_embed_size: 128
   num_decoder_layers: 1
   n_head: 4

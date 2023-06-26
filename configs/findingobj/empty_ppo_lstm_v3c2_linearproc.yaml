@@ -1,32 +1,33 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-ObjLocate-Empty-S9"
 # Training
-  bc_period: 1000000
+  bc_period: 0
   reshape_reward: False
   algo: "ppo"
   seed: 1
   log_interval: 1
   save_interval: 10
   procs: 16
-  frames: 1000000
-  lr: 0.001
+  frames: 5000000
+  lr: 0.0001
   gae_lambda: 0.95
   epochs: 4
   batch_size: 256
-  frames_per_proc: 128
+  frames_per_proc: 512
   discount: 0.99
-  entropy_coef: 0.0
-  value_loss_coef: 0.0
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
   max_grad_norm: 0.5
   optim_eps: 0.00000001
   optim_alpha: 0.99
   clip_eps: 0.2
   recurrence: 8
-  text: False
+  use_text: False
 # Model
   use_lstm: True
-  token_embed_size: 32
-  image_embed_size: 128
+  use_linear_procs: True
+  token_embed_size: 128
+  image_embed_size: 512
   num_decoder_layers: 1
   n_head: 4
   use_pastkv: False
@@ -35,4 +36,4 @@
   argmax: False
   pause: 0.1
   gif: False
-  episodes: 10000
+  episodes: 100

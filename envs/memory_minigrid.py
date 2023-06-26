@@ -14,7 +14,7 @@ from minigrid.core.constants import (
     OBJECT_TO_IDX,
     DIR_TO_VEC
 )
-# Action: 0 left 1 right 2 forward 6 done
+# Action: 0 left 1 right 2 forward 5 toggle 6 done
 from minigrid.core.world_object import (
     Wall,
     Ball,
@@ -463,7 +463,7 @@ class MiniGrid_MemoryS13_scalarobs(MemoryEnv):
             **kwargs,
         )
         
-        self.observation_space = spaces.Discrete(3)
+        self.observation_space = spaces.Discrete(4)
 
     def _gen_grid(self, width, height):
         self.grid = Grid(width, height)
@@ -537,7 +537,8 @@ class MiniGrid_MemoryS13_scalarobs(MemoryEnv):
     
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
-
+        if (obs['image'][:,:,0]==6).sum() == 1 and (obs['image'][:,:,0]==5).sum() == 1 and (obs['image'][:,:,0]==2).sum() == 7:
+            return 3, reward, terminated, truncated, info
         return 0, reward, terminated, truncated, info
 
     def compute_expert_action(self):

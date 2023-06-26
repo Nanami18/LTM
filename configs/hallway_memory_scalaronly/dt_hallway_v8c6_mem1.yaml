@@ -1,5 +1,5 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-MemoryS19-scalarobs"
 # Training
   seed: 1
   log_interval: 1
@@ -28,6 +28,10 @@
   n_blocks: 2
   n_heads: 4
   eval_reward: 0.9822222222222222
+  use_rmt: True
+  memory_size: 1
+# Dataset
+  sampling_from_beginning: True
 # Inference
   shift: 0
   argmax: False

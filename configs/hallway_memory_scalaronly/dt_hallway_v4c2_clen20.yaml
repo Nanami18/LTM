@@ -1,22 +1,22 @@
 # Env
-  env_name: "MiniGrid-MemoryS9-v0-seeobj"
+  env_name: "MiniGrid-MemoryS19-scalarobs"
 # Training
   seed: 1
   log_interval: 1
   save_interval: 10
-  frames: 10000
+  frames: 100000
   lr: 0.001
   gae_lambda: 0.95
   batch_size: 16
-  discount: 0.99
+  discount: 1.0
   max_grad_norm: 0.5
   optim_eps: 0.00000001
   optim_alpha: 0.99
   clip_eps: 0.2
   text: False
-  reward_pertubation: 0.001
+  reward_pertubation: 0.0
 # Model
-  context_length: 10
+  context_length: 20
   discrete_action: True
   action_dim: 1
   image_embed_size: 128

@@ -1,0 +1,33 @@
+# Env
+  env_name: "MiniGrid-ObjLocateEasy-S9"
+# Training
+  seed: 1
+  log_interval: 1
+  save_interval: 10
+  frames: 100000
+  num_episodes: 10000
+  lr: 0.00001
+  batch_size: 64
+  discount: 0.95
+  max_grad_norm: 0.5
+  optim_eps: 0.00000001
+  optim_alpha: 0.99
+  reward_pertubation: 0.00
+  init_var: True
+# Model
+  context_length: 100
+  discrete_action: True
+  action_dim: 1
+  image_embed_size: 512
+  hidden_dim: 512
+  token_embed_size: 128
+  n_blocks: 4
+  n_heads: 8
+  eval_reward: 20.0
+  max_timestep: 500
+# Inference
+  shift: 0
+  argmax: False
+  pause: 0.1
+  gif: False
+  episodes: 500

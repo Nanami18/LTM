@@ -30,10 +30,12 @@ def build_model(cfg, obs_space, action_space):
                 return HallwayMemoryScalarObs_DT(cfg, obs_space, action_space)
         else:
             return HallwayMemory_DT(cfg, obs_space, action_space)
+    elif "ObjLocate" in cfg.env_name:
+        return FindingObj_DT(cfg, obs_space, action_space)
 
 def init_params(m, cfg):
     classname = m.__class__.__name__
-    if (classname.find("Linear") != -1 and classname.find("ACModel") == -1) or classname.find("Embedding") != -1 :
+    if classname.find("Linear") != -1 or classname.find("Embedding") != -1 :
         m.weight.data.normal_(0, 1)
         if cfg.init_var:
             m.weight.data *= 1 / torch.sqrt(m.weight.data.pow(2).sum(1, keepdim=True))
@@ -216,7 +218,7 @@ class HallwayMemory_DT(nn.Module):
         causal_mask = torch.tril(ones).view(B, 1, self.max_length, self.max_length).cuda()
         if attention_mask is not None:
             attention_mask = causal_mask * attention_mask
-            indices = torch.arange(T)
+            indices = torch.arange(attention_mask.shape[2])
             attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
 
@@ -270,7 +272,7 @@ class HallwayMemory_DT(nn.Module):
 
         if attention_mask is not None:
             attention_mask = self.causal_mask * attention_mask
-            indices = torch.arange(T)
+            indices = torch.arange(attention_mask.shape[2])
             attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
         # get h reshaped such that its size = (B x 3 x T x h_dim) and
@@ -289,6 +291,177 @@ class HallwayMemory_DT(nn.Module):
     def convert_obs_inf(self, obs):
         states = torch.tensor(obs['image']).unsqueeze(0) # time dimension
         states = states.unsqueeze(0) # batch dimension
+
+        return states
+
+
+class FindingObj_DT(nn.Module):
+    def __init__(self, cfg, observation_space, action_space):
+        super().__init__()
+        self.cfg = cfg
+        self.action_dim = cfg.action_dim
+        self.hidden_dim = cfg.hidden_dim
+
+        input_seq_len = 3 * cfg.context_length
+        self.max_length = input_seq_len
+        blocks = [Block(cfg.hidden_dim, input_seq_len, cfg.n_heads, cfg.drop_p) for _ in range(cfg.n_blocks)]
+        self.transformer = SequentialTransformerBlock(*blocks)
+
+        # input encoders
+        self.embed_timestep = nn.Embedding(cfg.max_timestep+1, self.hidden_dim) # shall we use positional encoding?
+        self.embed_return = nn.Linear(self.action_dim, self.hidden_dim)
+        # Discrete action needs to have shape B x T, where continuous action has shape B x T x A
+        if cfg.discrete_action:
+            self.embed_action = nn.Embedding(len(Actions), self.hidden_dim)
+        else:
+            self.embed_action = nn.Linear(cfg.action_dim, self.hidden_dim)
+        self.embed_ln = nn.LayerNorm(self.hidden_dim)
+        # State embedding
+        if cfg.use_linear_state_encoder:
+            self.state_embed = nn.Linear(np.prod(observation_space['image'].shape), self.hidden_dim)
+        else:
+            self.object_embed = nn.Embedding(len(OBJECT_TO_IDX), cfg.token_embed_size)
+            self.color_embed = nn.Embedding(len(COLOR_TO_IDX), cfg.token_embed_size)
+            
+            self.image_conv = nn.Sequential(
+                nn.Conv2d(cfg.token_embed_size*2, cfg.image_embed_size//2, (2, 2)),
+                nn.ReLU(),
+                nn.AvgPool2d((2, 2)),
+                nn.Conv2d(cfg.image_embed_size//2, cfg.image_embed_size//2, (2, 2)),
+                nn.ReLU(),
+                nn.Conv2d(cfg.image_embed_size//2, cfg.image_embed_size, (2, 2)),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(cfg.image_embed_size, cfg.hidden_dim-cfg.token_embed_size),
+                nn.ReLU(),
+            )
+
+        # predictors
+        self.action_predictor = nn.Linear(self.hidden_dim, len(Actions))
+        # self.state_predictor = nn.Linear(self.hidden_dim, self.state_dim)
+        # self.return_predictor = nn.Linear(self.hidden_dim, 1)
+
+        # Attention mask related
+        ones = torch.ones((self.max_length, self.max_length))
+        self.causal_mask = torch.tril(ones).view(1, 1, self.max_length, self.max_length).cuda()
+
+        init_params(self, cfg)
+
+    def forward(self, returns, observation, actions, timestep, attention_mask=None):
+        
+        states = observation['image']
+        target = observation['target']
+        B, T = states.shape[0], states.shape[1]
+        # breakpoint()
+
+        time_embeddings = self.embed_timestep(timestep)
+        returns_embeddings = self.embed_return(returns) + time_embeddings
+
+        # Embed states
+        if self.cfg.use_linear_state_encoder:
+            states_embeddings = self.state_embed(states.reshape(B*T, -1).float())
+            states_embeddings = states_embeddings.reshape(B, T, self.hidden_dim) + time_embeddings
+        else:
+            object_embeddings = self.object_embed(states[:,:,:,:,0].long())
+            color_embeddings = self.color_embed(states[:,:,:,:,1].long())
+            states_embeddings = torch.cat([object_embeddings, color_embeddings], dim=-1)
+            states_embeddings = states_embeddings.reshape(B*T, states_embeddings.shape[2], states_embeddings.shape[3], states_embeddings.shape[4])
+            states_embeddings = states_embeddings.permute(0,3,1,2)
+            states_embeddings = self.image_conv(states_embeddings)
+            states_embeddings = states_embeddings.reshape(B, T, -1)
+        
+        target_embeddings = self.color_embed(target.long())
+        states_embeddings = torch.cat([states_embeddings, target_embeddings], dim=-1) + time_embeddings
+
+        if actions is not None:
+            actions_embeddings = torch.squeeze(self.embed_action(actions), 2) + time_embeddings
+
+        if actions is not None:
+            hidden = torch.stack([returns_embeddings, states_embeddings, actions_embeddings], dim=1).permute(0,2,1,3).reshape(B, 3*T, self.hidden_dim)
+        else:
+            hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
+        hidden = self.embed_ln(hidden)
+
+        # Transformer processing
+        if attention_mask is not None:
+            attention_mask = self.causal_mask * attention_mask
+            indices = torch.arange(attention_mask.shape[2])
+            attention_mask[:, :, indices, indices] = 1
+        hidden = self.transformer(hidden, attention_mask)
+
+        # get h reshaped such that its size = (B x 3 x T x h_dim) and
+        # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
+        # h[:, 1, t] is conditioned on r_0, s_0, a_0 ... r_t, s_t
+        # h[:, 2, t] is conditioned on r_0, s_0, a_0 ... r_t, s_t, a_t
+        if actions is not None:
+            hidden = hidden.reshape(B, T, 3, self.hidden_dim).permute(0,2,1,3)
+        else:
+            hidden = hidden.reshape(B, T, 2, self.hidden_dim).permute(0,2,1,3)
+
+        action_logits = self.action_predictor(hidden[:,1])
+
+        return action_logits
+
+    # batch dimension always equal to 1 right now, will probably remove it in the future
+    # Actions will be one timestep less, as we don't know the future action
+    def inference(self, returns, observations, actions, timesteps, attention_mask=None):
+
+        states = observations['image']
+        target = observations['target_color']
+        B, T = states.shape[0], states.shape[1]
+
+        time_embeddings = self.embed_timestep(timesteps)
+        returns_embeddings = self.embed_return(returns) + time_embeddings
+
+        # Embed states
+        if self.cfg.use_linear_state_encoder:
+            states_embeddings = self.state_embed(states.reshape(B*T, -1).float())
+            states_embeddings = states_embeddings.reshape(B, T, self.hidden_dim) + time_embeddings
+        else:
+            object_embeddings = self.object_embed(states[:,:,:,:,0].long())
+            color_embeddings = self.color_embed(states[:,:,:,:,1].long())
+            states_embeddings = torch.cat([object_embeddings, color_embeddings], dim=-1)
+            states_embeddings = states_embeddings.reshape(B*T, states_embeddings.shape[2], states_embeddings.shape[3], states_embeddings.shape[4])
+            states_embeddings = states_embeddings.permute(0,3,1,2)
+            states_embeddings = self.image_conv(states_embeddings)
+            states_embeddings = states_embeddings.reshape(B, T, -1)
+        
+        target_embeddings = self.color_embed(target.long())
+        states_embeddings = torch.cat([states_embeddings, target_embeddings], dim=-1) + time_embeddings
+
+        if actions is not None:
+            actions = torch.cat([actions, torch.zeros(B, 1).to(actions.device).long()], dim=1)
+            if actions.shape[1] > T:
+                actions = actions[:,1:]
+            actions_embeddings = torch.squeeze(self.embed_action(actions), 2) + time_embeddings
+
+        if actions is not None:
+            hidden = torch.stack([returns_embeddings, states_embeddings, actions_embeddings], dim=1).permute(0,2,1,3).reshape(B, 3*T, self.hidden_dim)
+        else:
+            hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
+        hidden = self.embed_ln(hidden)
+
+        if attention_mask is not None:
+            attention_mask = self.causal_mask * attention_mask
+            indices = torch.arange(attention_mask.shape[2])
+            attention_mask[:, :, indices, indices] = 1
+        hidden = self.transformer(hidden, attention_mask)
+        # get h reshaped such that its size = (B x 3 x T x h_dim) and
+        # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
+        # h[:, 1, t] is conditioned on r_0, s_0, a_0 ... r_t, s_t
+        # h[:, 2, t] is conditioned on r_0, s_0, a_0 ... r_t, s_t, a_t
+        if actions is not None:
+            hidden = hidden.reshape(B, T, 3, self.hidden_dim).permute(0,2,1,3)
+        else:
+            hidden = hidden.reshape(B, T, 2, self.hidden_dim).permute(0,2,1,3)
+
+        action_logits = self.action_predictor(hidden[:,1])
+
+        return action_logits
+
+    def convert_obs_inf(self, obs):
+        states = {"image" : torch.tensor(obs['image']).unsqueeze(0).unsqueeze(0), 
+                  "target_color" : torch.tensor(obs['target_color']).unsqueeze(0).unsqueeze(0)}
 
         return states
 
@@ -348,7 +521,7 @@ class HallwayMemoryScalarObs_DT(nn.Module):
         # Transformer processing
         if attention_mask is not None:
             attention_mask = self.causal_mask * attention_mask
-            indices = torch.arange(T)
+            indices = torch.arange(attention_mask.shape[2])
             attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
         
@@ -388,6 +561,12 @@ class HallwayMemoryScalarObs_DT(nn.Module):
         else:
             hidden = torch.stack([returns_embeddings, states_embeddings], dim=1).permute(0,2,1,3).reshape(B, 2*T, self.hidden_dim)
         hidden = self.embed_ln(hidden)
+        
+        # Transformer processing
+        if attention_mask is not None:
+            attention_mask = self.causal_mask * attention_mask
+            indices = torch.arange(attention_mask.shape[2])
+            attention_mask[:, :, indices, indices] = 1
         hidden = self.transformer(hidden, attention_mask)
         # get h reshaped such that its size = (B x 3 x T x h_dim) and
         # h[:, 0, t] is conditioned on r_0, s_0, a_0 ... r_t
@@ -533,9 +712,7 @@ class HallwayMemoryScalarObs_DTwithRMT(nn.Module):
 
         hidden = self.embed_ln(hidden)
         if attention_mask is not None:
-            ones = torch.ones((info_T, info_T))
-            causal_mask = torch.tril(ones).view(1, info_T, info_T).cuda()
-            attention_mask = causal_mask * attention_mask
+            attention_mask = self.causal_mask * attention_mask
             attention_mask = F.pad(attention_mask, (0, self.memory_size, self.memory_size, 0), value = False)
             attention_mask = F.pad(attention_mask, (self.memory_size, 0, 0, self.memory_size), value = True)
         else:
